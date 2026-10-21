@@ -186,3 +186,12 @@ cannot execute this backend. No paid host or production database is configured.
   both authenticated and effective identities before testing permissions.
 - A final non-browser local run passed 23 tests with 10 optional cases skipped;
   the 5 browser cases passed separately. PostgreSQL validation continues in CI.
+
+### PostgreSQL parity repair
+
+The restricted-login fixture repair passed all five PostgreSQL migration and
+permission tests in GitHub run 39595354561. Full API parity then exposed a real
+compatibility defect: the daily analytics SQL used `day` as an implicit alias,
+which PostgreSQL rejects. Replaced it with explicit `AS day_bucket` in both
+queries without changing returned analytics fields. SQLite regressions remained
+green. This is a source fix, with no schema/data migration.

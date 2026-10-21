@@ -367,8 +367,8 @@ async def admin(slug:str,request:Request):
         station_scans={r['station_id']:r['total'] for r in c.execute('SELECT station_id,count(*) total FROM scans WHERE business_id=? GROUP BY station_id',(b['id'],))}
         station_requests={r['station_id']:r['total'] for r in c.execute('SELECT station_id,count(*) total FROM requests WHERE business_id=? GROUP BY station_id',(b['id'],))}
         today=ts()//86400
-        daily_scans={r['day']:r['total'] for r in c.execute('SELECT created_at/86400 day,count(*) total FROM scans WHERE business_id=? AND created_at>=? GROUP BY created_at/86400',(b['id'],(today-6)*86400))}
-        daily_requests={r['day']:r['total'] for r in c.execute('SELECT created_at/86400 day,count(*) total FROM requests WHERE business_id=? AND created_at>=? GROUP BY created_at/86400',(b['id'],(today-6)*86400))}
+        daily_scans={r['day_bucket']:r['total'] for r in c.execute('SELECT created_at/86400 AS day_bucket,count(*) total FROM scans WHERE business_id=? AND created_at>=? GROUP BY created_at/86400',(b['id'],(today-6)*86400))}
+        daily_requests={r['day_bucket']:r['total'] for r in c.execute('SELECT created_at/86400 AS day_bucket,count(*) total FROM requests WHERE business_id=? AND created_at>=? GROUP BY created_at/86400',(b['id'],(today-6)*86400))}
         activity=[{'day':day*86400,'scans':daily_scans.get(day,0),'requests':daily_requests.get(day,0)} for day in range(today-6,today+1)]
         station_activity=[{'label':spot['label'],'scans':station_scans.get(spot['id'],0),'requests':station_requests.get(spot['id'],0)} for spot in spots]
         return {'id':b['id'],'name':b['name'],'slug':b['slug'],'industry':b['industry'],'accent':b['accent'],'tagline':b['tagline'],'role':b['role'],
