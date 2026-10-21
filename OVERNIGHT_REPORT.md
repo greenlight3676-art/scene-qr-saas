@@ -195,3 +195,29 @@ compatibility defect: the daily analytics SQL used `day` as an implicit alias,
 which PostgreSQL rejects. Replaced it with explicit `AS day_bucket` in both
 queries without changing returned analytics fields. SQLite regressions remained
 green. This is a source fix, with no schema/data migration.
+
+
+### Final publication verification
+
+Application source is published on the public GitHub repository's main branch:
+https://github.com/greenlight3676-art/scene-qr-saas
+
+Verified source commit: 4e28ae92304a1988fd9d23b797db6e8c8619f567.
+All four jobs passed in run 39595549901:
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39595549901
+
+- Regular Python regressions, JavaScript syntax and frontend tests: passed.
+- PostgreSQL migration/permission and full restricted-login API parity: passed.
+- All five Chromium phone/tablet guest and owner workflows: passed.
+- Docker image build, non-demo startup and static-asset smoke check: passed.
+
+The two CI-discovered issues were fixed rather than bypassing checks: actual
+restricted test authentication and PostgreSQL-compatible daily bucket aliases.
+The final follow-up commit changes documentation only and records this passing
+source revision; no application behavior changes after the verified run.
+
+No production host, production data, Supabase project, payments or external
+customer messaging was configured or changed. The repository contains source
+and automated checks; this is not a publicly hosted application URL. Supabase
+verification/recovery, database RLS, production privacy/retention and other
+commercial launch gates remain as documented above.

@@ -21,7 +21,7 @@
 Requires **Python 3.11+**.
 
 ```bash
-cd scene-qr-live-mvp
+cd scene-qr-saas
 python3 -m pip install -r requirements.txt
 SCENE_DEMO=1 python3 -m uvicorn server:app --host 127.0.0.1 --port 8000 --workers 1
 ```
