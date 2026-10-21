@@ -50,3 +50,20 @@ body.standalone-guest .guest-topbar #exitGuest{display:none!important}
 .guest-message .guest-consent{display:flex;gap:10px;align-items:flex-start;line-height:1.5;min-height:44px}
 .guest-consent input{flex:none;width:20px;height:20px;accent-color:#55374c}
 .guest-message button{min-height:44px;width:100%}
+
+/* Full-history operations and guest catalog controls. */
+.request-tools{display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin-bottom:22px}
+.request-tools .form-field{flex:1 1 165px;min-width:0}
+.request-tools .field{width:100%;min-height:44px;font-size:16px}
+.request-pages{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:22px}
+.request-pages>span{font-size:12px;color:var(--muted)}
+.guest-catalog-tools{margin:18px 0;color:#342830}
+.guest-catalog-tools label{display:block;font-size:13px;font-weight:600;margin:12px 0 6px}
+.guest-catalog-tools input,.guest-catalog-tools select{width:100%;min-height:44px;font-size:16px;padding:10px;background:#fff;color:#342830;border:1px solid #a79a9f;border-radius:10px}
+.guest-catalog-tools p{font-size:12px;color:#665660;min-height:18px}
+.cart-line{padding:10px 0;border-bottom:1px solid #00000018;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.cart-line p{flex:1 1 130px;overflow-wrap:anywhere}
+.quantity-controls{display:flex;align-items:center;gap:10px}
+.quantity-controls button{width:44px;min-height:44px;border:1px solid #ad9ba4;background:#fff;color:#342830;border-radius:10px;font-size:20px}
+.quantity-controls span{min-width:20px;text-align:center;font-variant-numeric:tabular-nums}
+@media(max-width:600px){.request-tools .form-field{flex-basis:100%}.request-tools .btn{flex:1}.request-pages .btn{min-height:44px}.request-pages>span{order:3;width:100%;text-align:center}}

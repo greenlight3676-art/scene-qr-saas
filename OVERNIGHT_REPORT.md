@@ -221,3 +221,56 @@ customer messaging was configured or changed. The repository contains source
 and automated checks; this is not a publicly hosted application URL. Supabase
 verification/recovery, database RLS, production privacy/retention and other
 commercial launch gates remain as documented above.
+
+## Autonomous feature batch — 2026-10-21
+
+Scope: finish full-history request operations, improve guest catalog selection,
+and close the unused-invitation lifecycle. No new packages, schema migrations,
+paid services or production database operations.
+
+Completed implementation:
+
+- Authenticated tenant-scoped request history endpoint with ID cursor paging,
+  bounded page sizes, literal message/station search and status/type/station
+  filters. Full-history status counts stay independent of the current cursor.
+- Request center now pages through all history, including older inquiries;
+  Previous/Next, clear filters and question/inquiry filtering work on phones.
+  Overview retains its compatible 250-row snapshot API contract.
+- Guest catalog search matches name/description/category, with category filters
+  that preserve focus. Cart increment/decrement/remove controls cap quantities
+  at 99; the server validates quantities and records them in staff messages.
+- Unpriced selections show quote-required copy rather than claiming no charge.
+  Requests still do not create paid orders or confirmed POS tickets.
+- Inquiry drafts and consent state survive cart/filter changes in memory and
+  clear only after successful inquiry submission. They are not persisted in
+  browser receipt storage or across reloads.
+- Owner-only pending invitation list and CSRF-protected revocation. Revocation
+  expires unused links without deleting invitation history or existing members.
+- Stale request-search responses are ignored. Workspace changes reset request
+  state, and unchanged refresh responses preserve live controls rather than
+  replacing them while a user is operating them. Polling pauses while request
+  filters or a status selector have focus.
+
+Verification:
+
+- Baseline: 23 Python tests passed, 10 optional cases skipped; JS syntax passed.
+- Final Python regressions: 26 passed, 12 optional cases skipped in 4.43 seconds.
+  Seven browser cases were run separately; five PostgreSQL tests need hosted CI.
+- Frontend runner: 14 passed; JS syntax and Python compilation passed.
+- Chromium: all seven workflows passed in 58.64 seconds at phone/tablet widths,
+  including paging/search, quantity dispatch, draft preservation and revocation.
+- First browser run caught DOM replacement during status interaction; fixed
+  refresh stability and reran the complete browser suite successfully.
+- Inspected the 320px guest catalog screenshot. Browser tests assert no
+  horizontal overflow, minimum status-control sizes and no page errors.
+- New API regressions cover 271-row history, literal wildcard search, tenant
+  boundaries, staff permissions, CSRF, revoked-link rejection and quantity/ID
+  bounds. The same API tests run against PostgreSQL in GitHub Actions.
+- `git diff --check` passed. Existing TestClient dependency deprecation warning
+  remains; no unrelated dependency upgrade was introduced.
+
+Remaining production gates: Supabase email verification/recovery and invitation
+delivery, database RLS, durable realtime/abuse protection, contact-data retention
+policy, authenticated audit history, payment/POS integrations and public hosting.
+No Supabase project is configured for this application. Inquiry messages remain
+private staff requests, not a CRM pipeline or verified lead/conversion metric.

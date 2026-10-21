@@ -161,3 +161,76 @@ def test_mobile_inquiries_receipts_and_owner_team_controls(local_site, width):
             assert not errors, errors
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize('width',[320,768])
+def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tmp_path):
+    import sqlite3
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            owner=browser.new_context(viewport={'width':width,'height':844},reduced_motion='reduce',base_url=local_site)
+            guest=browser.new_context(viewport={'width':width,'height':844},reduced_motion='reduce',base_url=local_site)
+            result=owner.request.post('/api/auth/signup',data={'email':'history-browser@example.invalid','password':'SyntheticBrowserFixture123!','name':'Sample catalog studio','industry':'auto'})
+            assert result.ok
+            slug=result.json()['slug'];csrf={'x-scene-csrf':owner.request.get('/api/me').json()['csrf']}
+            board=owner.request.get('/api/admin/'+slug).json();token=board['stations'][0]['token']
+            for name,category in [('Sample wax','Detailing'),('Sample seats','Care')]:
+                assert owner.request.post(f'/api/admin/{slug}/products',headers=csrf,data={'name':name,'category':category,'price_cents':125}).ok
+            # Synthetic history seeded only in this test's disposable SQLite DB.
+            with sqlite3.connect(tmp_path/'browser.sqlite') as c:
+                for i in range(31):
+                    c.execute('INSERT INTO requests(business_id,station_id,kind,message,status,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+                              (board['id'],board['stations'][0]['id'],'question' if i==0 else 'service','Oldest synthetic inquiry' if i==0 else f'Archive {i}','completed','fixture-only',f'browser-history-fixture-{i}',1,1))
+            phone,dashboard=guest.new_page(),owner.new_page()
+            errors=[]
+            for page in (phone,dashboard):page.on('pageerror',lambda error:errors.append(str(error)))
+            phone.goto('/?q='+token)
+            phone.locator('#guestNote').fill('Please keep this draft')
+            phone.locator('#guestContact').fill('sample@example.invalid')
+            phone.locator('#guestConsent').check()
+            phone.locator('#guestSearch').fill('wax')
+            expect(phone.locator('.guest-product:visible')).to_have_count(1)
+            phone.locator('[data-add]:visible').click()
+            expect(phone.locator('#guestNote')).to_have_value('Please keep this draft')
+            expect(phone.locator('#guestConsent')).to_be_checked()
+            phone.get_by_role('button',name='Increase Sample wax quantity').click()
+            expect(phone.locator('.cart-line')).to_contain_text('2 × Sample wax')
+            phone.locator('#guestSearch').fill('')
+            phone.locator('#guestCategory').select_option('Care')
+            expect(phone.locator('.guest-product:visible')).to_have_count(1)
+            expect(phone.locator('.guest-product:visible')).to_contain_text('Sample seats')
+            phone.locator('[data-send-cart]').click()
+            expect(phone.locator('[data-receipt-id]')).to_have_count(1)
+            expect(phone.locator('#guestNote')).to_have_value('Please keep this draft')
+            request=owner.request.get('/api/admin/'+slug).json()['requests'][0]
+            assert 'Quantity 2' in request['message']
+            dashboard.goto('/')
+            dashboard.locator('#mobileMenu').click()
+            dashboard.locator('#mainNav [data-screen="requests"]').click()
+            expect(dashboard.locator('.request-card')).to_have_count(25)
+            dashboard.locator('#nextRequests').click()
+            expect(dashboard.locator('.request-card')).to_have_count(7)
+            expect(dashboard.locator('.request-list')).to_contain_text('Oldest synthetic inquiry')
+            dashboard.locator('#previousRequests').click()
+            expect(dashboard.locator('.request-card')).to_have_count(25)
+            dashboard.locator('#requestSearch').fill('oldest')
+            dashboard.locator('#requestKind').select_option('question')
+            dashboard.locator('#requestSearchForm button[type="submit"]').click()
+            expect(dashboard.locator('.request-card')).to_have_count(1)
+            expect(dashboard.locator('.request-list')).to_contain_text('Oldest synthetic inquiry')
+            expect(dashboard.locator('#nextRequests')).to_be_disabled()
+            dashboard.locator('#mobileMenu').click()
+            dashboard.locator('#mainNav [data-screen="team"]').click()
+            dashboard.locator('#inviteForm button[type="submit"]').click()
+            expect(dashboard.locator('[data-revoke-invite]')).to_have_count(1)
+            dashboard.locator('[data-revoke-invite]').click()
+            expect(dashboard.locator('[data-revoke-invite]')).to_have_count(0)
+            for page in (dashboard,phone):
+                assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            assert not errors,errors
+            dashboard.screenshot(path=str(tmp_path/f'team-{width}.png'),full_page=True)
+            phone.screenshot(path=str(tmp_path/f'catalog-{width}.png'),full_page=True)
+        finally:
+            browser.close()

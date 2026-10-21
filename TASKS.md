@@ -33,3 +33,13 @@
 - [x] Confirm repaired PostgreSQL migration and full API parity jobs pass.
 
 - [x] All four CI jobs passed on source commit 4e28ae92304a1988fd9d23b797db6e8c8619f567.
+
+## Autonomous development batch — request history and guest selection
+
+- [x] Add tenant-scoped paginated request history, search, status/type/station
+  filters and full-history counts; make inquiries easy to find.
+- [x] Add mobile guest catalog search/category filters and quantity controls,
+  with server-validated quantities and preserved inquiry drafts.
+- [x] Add owner-only pending invitation listing and revocation.
+- [x] Cover authorization, validation, pagination and phone workflows with tests.
+- [ ] Publish verified code and inspect all four CI jobs; document remaining gates.

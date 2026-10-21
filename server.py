@@ -21,7 +21,7 @@ from typing import Literal
 from urllib.parse import quote, urlsplit
 
 import qrcode
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -168,7 +168,8 @@ class Credentials(BaseModel):
 class NewRequest(BaseModel):
     kind: str = Field(min_length=1,max_length=30)
     message: str = Field(default='',max_length=400)
-    product_id: int|None = None
+    product_id: int|None = Field(default=None,gt=0,le=9223372036854775807,strict=True)
+    quantity: int = Field(default=1,ge=1,le=99,strict=True)
     client_key: str = Field(min_length=20,max_length=100)
 class ChangeStatus(BaseModel):
     status: Literal['in_progress','completed']
@@ -340,7 +341,9 @@ async def guest_request(token: str, body: NewRequest, request: Request):
             if not item: fail(400,'Select a valid item')
         message=body.message.strip()
         if body.kind=='question' and not message: fail(400,'Enter a message for the team')
+        if not item and body.quantity!=1: fail(400,'Quantities require a catalog item')
         if item: message='Interested in: '+item['name']+(' · '+message if message else '')
+        if item and body.quantity!=1: message+=f' · Quantity {body.quantity}'
         receipt=secrets.token_urlsafe(32)
         rid=c.execute('''INSERT INTO requests(business_id,station_id,kind,message,product_id,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)''',(q['business_id'],q['station_id'],body.kind,message,item['id'] if item else None,sha(receipt),body.client_key,ts(),ts())).lastrowid
         return {'ok':True,'request_id':rid,'ticket':receipt,'status':'open','note':'Staff received your service request. This is not a paid order or confirmed booking.'}
@@ -374,6 +377,41 @@ async def admin(slug:str,request:Request):
         return {'id':b['id'],'name':b['name'],'slug':b['slug'],'industry':b['industry'],'accent':b['accent'],'tagline':b['tagline'],'role':b['role'],
           'stations':spots,'products':products,'requests':reqs,
           'analytics':{'total':counts['total'],'open':counts['open'] or 0,'resolved':counts['completed'] or 0,'scans':sum(station_scans.values()),'request_kinds':kinds,'stations':station_activity,'daily':activity}}
+
+@app.get('/api/admin/{slug}/requests')
+async def request_history(slug:str,request:Request,
+                          status:Literal['all','open','in_progress','completed']='all',
+                          kind:str=Query(default='',max_length=30),
+                          search:str=Query(default='',max_length=100),
+                          station_id:int|None=Query(default=None,gt=0,le=9223372036854775807),
+                          before:int|None=Query(default=None,gt=0,le=9223372036854775807),
+                          limit:int=Query(default=25,ge=1,le=100)):
+    s=user_session(request)
+    with db() as c:
+        b=grant(c,slug,s['user_id'])
+        clauses=['r.business_id=?']; values=[b['id']]
+        if kind:
+            if kind not in ALLOWED_KINDS[b['industry']]: fail(400,'Unsupported request type')
+            clauses.append('r.kind=?');values.append(kind)
+        if station_id is not None:
+            if not c.execute('SELECT id FROM stations WHERE id=? AND business_id=?',(station_id,b['id'])).fetchone():
+                fail(404,'Location not found')
+            clauses.append('r.station_id=?');values.append(station_id)
+        if search.strip():
+            literal=search.strip().lower().replace('!','!!').replace('%','!%').replace('_','!_')
+            clauses.append("(LOWER(r.message) LIKE ? ESCAPE '!' OR LOWER(s.label) LIKE ? ESCAPE '!')")
+            values.extend(['%'+literal+'%']*2)
+        source=' FROM requests r JOIN stations s ON s.id=r.station_id WHERE '+' AND '.join(clauses)
+        counts={'all':0,'open':0,'in_progress':0,'completed':0}
+        for row in c.execute('SELECT r.status,count(*) total'+source+' GROUP BY r.status',tuple(values)):
+            counts[row['status']]=row['total'];counts['all']+=row['total']
+        total=counts[status]
+        if status!='all': source+=' AND r.status=?';values.append(status)
+        if before is not None: source+=' AND r.id<?';values.append(before)
+        rows=[dict(r) for r in c.execute('SELECT r.id,r.kind,r.message,r.status,r.created_at,r.updated_at,s.label AS station'+source+' ORDER BY r.id DESC LIMIT ?',tuple(values+[limit+1]))]
+        more=len(rows)>limit;rows=rows[:limit]
+        return {'requests':rows,'total':total,'status_counts':counts,'has_more':more,
+                'next_before':rows[-1]['id'] if more else None}
 
 @app.patch('/api/admin/{slug}/requests/{rid}')
 async def update_request(slug:str,rid:int,body:ChangeStatus,request:Request):
@@ -449,6 +487,24 @@ async def members(slug:str,request:Request):
         b=grant(c,slug,s['user_id'],{'owner'})
         rows=c.execute('''SELECT u.id,u.email,m.role FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.business_id=? ORDER BY m.role,u.email''',(b['id'],)).fetchall()
         return {'members':[dict(r) for r in rows]}
+
+@app.get('/api/admin/{slug}/invites')
+async def pending_invites(slug:str,request:Request):
+    s=user_session(request)
+    with db() as c:
+        b=grant(c,slug,s['user_id'],{'owner'})
+        rows=c.execute('SELECT token_hash AS id,role,expires_at FROM invites WHERE business_id=? AND used_at IS NULL AND expires_at>? ORDER BY expires_at,token_hash',(b['id'],ts())).fetchall()
+        return {'invites':[dict(r) for r in rows]}
+
+@app.post('/api/admin/{slug}/invites/{invite_id}/revoke')
+async def revoke_invite(slug:str,invite_id:str,request:Request):
+    s=user_session(request,True)
+    with db() as c:
+        b=grant(c,slug,s['user_id'],{'owner'})
+        if not re.fullmatch('[a-f0-9]{64}',invite_id): fail(404,'Invitation not found')
+        changed=c.execute('UPDATE invites SET expires_at=? WHERE token_hash=? AND business_id=? AND used_at IS NULL AND expires_at>?',(ts(),invite_id,b['id'],ts()))
+        if not changed.rowcount: fail(404,'Active invitation not found')
+        return {'ok':True}
 
 @app.patch('/api/admin/{slug}/members/{uid}')
 async def change_member(slug:str,uid:int,body:MemberRole,request:Request):

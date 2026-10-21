@@ -101,8 +101,8 @@ schema and read-only, empty-target SQLite importer are available; see
 [POSTGRES_MIGRATION.md](POSTGRES_MIGRATION.md) for environment configuration,
 least-privilege grants, backup/import and rollback limits. Install
 `requirements-postgres.txt` before opting in with `SCENE_DATABASE_URL`.
-Do not cut over production data yet: RLS and full PostgreSQL workflow validation
-remain open gates. Mobile queue controls now wrap on small screens with larger
+Do not cut over production data yet: RLS remains an open gate. Disposable
+PostgreSQL migration and full API parity tests now run in CI. Mobile queue controls now wrap on small screens with larger
 touch targets, retaining the existing visual design.
 
 ### Overnight workspace update (2026-10-21)
@@ -112,8 +112,8 @@ project; use this directory in place of the older example directory above.
 No existing source copy, hosted service or merchant database was changed.
 
 The dashboard now shows full-history request-type totals, per-station activity
-and seven daily UTC page-load/request counts. The queue shows at most 250 rows,
-prioritizing active requests. Counts include previews, refreshes and automated
+and seven daily UTC page-load/request counts. The overview includes up to 250 recent/active requests. The Request center
+provides paginated access to the complete history. Counts include previews, refreshes and automated
 traffic; they do not measure unique people or revenue.
 
 Guests can send a question and optional name/contact details to the business's
@@ -137,7 +137,7 @@ verified email, password recovery and an audit history are still pending.
 Validation and remaining environment blockers are in
 [OVERNIGHT_REPORT.md](OVERNIGHT_REPORT.md). No new packages or migrations are
 required. The Docker image now includes the required `storage.py` module;
-image building remains to be verified where Docker is available.
+image building and non-demo startup are verified in GitHub Actions.
 
 ### GitHub verification
 
@@ -159,3 +159,33 @@ GitHub hosts the source and automated checks. GitHub Pages cannot run this
 FastAPI backend; public application hosting still needs an HTTPS service and
 persistent storage as described above. Historical local reference screenshots
 are excluded from source publication.
+
+### Request history, guest selections and invitation control
+
+**Request center** searches the full request history by message or station label,
+with status, type and station filters. Select **Questions / inquiries** to find
+inquiry messages and contact details shared with the business. This includes all
+questions; it is not a count of qualified leads or confirmed sales. Previous/Next
+controls show 25 rows per page, newest request ID first. Counts apply to the
+chosen search/type/station filters across the full history. Search treats `%`
+and `_` literally. New arrivals appear on the first page after refresh.
+
+The authenticated `GET /api/admin/{slug}/requests` endpoint accepts `status`,
+`kind`, `search` (up to 100 characters), `station_id`, `before` and `limit`
+(1–100, default 25). Use `next_before` for the next page. Tenant membership is
+checked on every call; private receipt tokens/hashes are never returned.
+
+Guests can search names, descriptions and categories, filter by category, and
+increase/decrease selections (1–99 of each item; decreasing to zero removes it).
+Prices are estimated subtotals; selections with unpriced items require a quote.
+Quantities are validated on the server and included in the staff request's
+message. These remain service/ordering requests, without payment, inventory
+reservation or confirmed POS delivery. Inquiry drafts survive cart/filter
+changes in memory and clear after a successful inquiry; drafts are not saved
+across page reloads or stored in receipt history.
+
+Owners can view pending invitations in **Team access** and revoke unused links.
+Revocation expires the link without deleting membership or invitation data;
+it does not remove someone who already joined. Use member removal for that.
+Invitation listing/revocation require owner membership, and revocation requires
+CSRF validation. No schema migration or new external service is needed.

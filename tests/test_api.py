@@ -299,3 +299,89 @@ def test_guest_question_validation_and_contact_privacy():
         assert set(status.json()) == {'status','updated_at'}
         assert owner.get('/api/admin/'+slug).json()['requests'][0]['message'] == message
         assert guest.post(path, json={'kind':'question','message':'x'*401,'client_key':'long-question-fixture-01'}).status_code == 422
+
+
+def test_request_history_pages_filters_literal_search_and_tenant_isolation():
+    with TestClient(app) as owner, TestClient(app) as other, TestClient(app) as guest:
+        slug, _ = registration(owner,'history-owner@example.invalid','History fixture')
+        other_slug, _ = registration(other,'history-other@example.invalid','Other history fixture')
+        board=owner.get('/api/admin/'+slug).json()
+        bid=board['id'];station=board['stations'][0]['id']
+        with db() as c:
+            for i in range(271):
+                c.execute('INSERT INTO requests(business_id,station_id,kind,message,status,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+                          (bid,station,'question' if i==0 else 'service',
+                           'Oldest 100%_inquiry' if i==0 else f'Archive synthetic {i}',
+                           'completed' if i==0 else 'open','private-fixture-hash',f'history-fixture-{i}',ts(),ts()))
+        path=f'/api/admin/{slug}/requests'
+        assert guest.get(path).status_code==401
+        assert other.get(path).status_code==404
+        ids=[];before=None
+        for expected in (100,100,71):
+            params={'limit':100}
+            if before: params['before']=before
+            response=owner.get(path,params=params)
+            assert response.status_code==200,response.text
+            data=response.json()
+            assert len(data['requests'])==expected
+            assert data['total']==271
+            assert data['status_counts']=={'all':271,'open':270,'in_progress':0,'completed':1}
+            assert 'receipt_hash' not in response.text and 'client_key' not in response.text
+            ids.extend(row['id'] for row in data['requests'])
+            before=data['next_before']
+        assert len(set(ids))==271 and ids==sorted(ids,reverse=True)
+        assert not data['has_more'] and before is None
+        result=owner.get(path,params={'search':'100%_INQUIRY','kind':'question','status':'completed','station_id':station}).json()
+        assert result['total']==1 and result['requests'][0]['id']==ids[-1]
+        assert owner.get(path,params={'search':"%' OR 1=1 --"}).json()['total']==0
+        foreign=other.get('/api/admin/'+other_slug).json()['stations'][0]['id']
+        assert owner.get(path,params={'station_id':foreign}).status_code==404
+        assert other.get(f'/api/admin/{other_slug}/requests').json()['total']==0
+        for params in ({'limit':101},{'limit':0},{'before':0},{'before':2**63},{'station_id':2**63},{'status':'deleted'},{'search':'x'*101}):
+            assert owner.get(path,params=params).status_code==422
+        assert owner.get(path,params={'kind':'unsupported'}).status_code==400
+
+
+def test_pending_invitation_revocation_is_owner_only_scoped_and_effective():
+    from urllib.parse import parse_qs,urlsplit
+    with TestClient(app) as owner, TestClient(app) as member, TestClient(app) as other:
+        slug,headers=registration(owner,'invite-owner@example.invalid','Revoke invitation fixture')
+        other_slug,other_headers=registration(other,'invite-other@example.invalid','Foreign invitation fixture')
+        path=f'/api/admin/{slug}/invites'
+        first=owner.post(path,headers=headers,json={'role':'manager'}).json()
+        token=parse_qs(urlsplit(first['join_url']).query)['invite'][0]
+        listed=owner.get(path).json()['invites']
+        assert len(listed)==1 and listed[0]['role']=='manager'
+        assert token not in str(listed)
+        identifier=listed[0]['id']
+        revoke=f'{path}/{identifier}/revoke'
+        second=owner.post(path,headers=headers,json={'role':'staff'}).json()
+        second_token=parse_qs(urlsplit(second['join_url']).query)['invite'][0]
+        assert member.post('/api/auth/join',json={'token':second_token,'email':'pending-staff@example.invalid','password':'SyntheticStaffFixture123!'}).status_code==200
+        staff_headers={'x-scene-csrf':member.get('/api/me').json()['csrf']}
+        assert member.get(f'/api/admin/{slug}/requests').status_code==200
+        assert member.get(path).status_code==403
+        assert member.post(revoke,headers=staff_headers,json={}).status_code==403
+        assert other.get(path).status_code==404
+        assert other.post(f'/api/admin/{other_slug}/invites/{identifier}/revoke',headers=other_headers,json={}).status_code==404
+        assert owner.post(revoke,json={}).status_code==403
+        assert owner.post(revoke,headers=headers,json={}).status_code==200
+        assert owner.get(path).json()['invites']==[]
+        assert owner.post(revoke,headers=headers,json={}).status_code==404
+        assert member.post('/api/auth/join',json={'token':token,'email':'revoked-link@example.invalid','password':'SyntheticStaffFixture123!'}).status_code==410
+
+
+def test_catalog_quantity_is_validated_and_reaches_private_staff_queue():
+    with TestClient(app) as owner, TestClient(app) as guest:
+        slug,headers=registration(owner,'quantity-owner@example.invalid','Quantity fixture')
+        board=owner.get('/api/admin/'+slug).json();token=board['stations'][0]['token']
+        product=owner.post(f'/api/admin/{slug}/products',headers=headers,json={'name':'Sample service','price_cents':125}).json()['id']
+        path=f'/api/q/{token}/requests'
+        for quantity in (0,100,-1,True,'2',2.5):
+            assert guest.post(path,json={'kind':'service','product_id':product,'quantity':quantity,'client_key':'quantity-invalid-fixture'}).status_code==422
+        assert guest.post(path,json={'kind':'service','quantity':2,'client_key':'quantity-no-item-fixture'}).status_code==400
+        result=guest.post(path,json={'kind':'service','product_id':product,'quantity':3,'client_key':'quantity-valid-fixture-01'})
+        assert result.status_code==200
+        message=owner.get('/api/admin/'+slug).json()['requests'][0]['message']
+        assert 'Sample service' in message and 'Quantity 3' in message
+        assert 'message' not in result.json()

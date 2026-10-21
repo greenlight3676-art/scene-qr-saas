@@ -12,13 +12,14 @@ function guestApp(industry, fetch, nodes={}) {
   const storage=new Map();
   const context = vm.createContext({
     sessionStorage:{getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value)},
+    URLSearchParams,
     crypto: webcrypto,
     fetch,
     document: {getElementById: id => nodes[id]||({})},
   });
   vm.runInContext(source.slice(0, start) + `
     renderGuest=()=>{};toast=()=>{};beginGuestStatusPolling=()=>{};
-    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage};
+    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests};
   })();`, context);
   const app = context.guestTest;
   app.storage=storage;
@@ -127,4 +128,48 @@ test('failed inquiry preserves entered fields for correction',async()=>{
   assert.equal(nodes.guestNote.value,'Synthetic question');
   assert.equal(app.state.receipts.length,0);
   assert.equal(app.state.pending,false);
+});
+
+
+test('guest catalog search combines text and category filters',()=>{
+  const app=guestApp('auto',async()=>{});
+  app.state.guest.products=[{id:1,name:'Exterior clean',description:'Wax finish',category:'Detailing'},{id:2,name:'Interior clean',description:'Seats',category:'Care'}];
+  assert.deepEqual(Array.from(app.matchingProducts(app.state.guest,'CLEAN','Care'),p=>p.id),[2]);
+  assert.deepEqual(Array.from(app.matchingProducts(app.state.guest,'wax'),p=>p.id),[1]);
+  assert.equal(app.matchingProducts(app.state.guest,'missing').length,0);
+});
+
+test('cart quantities can be adjusted and removed with a maximum of 99',async()=>{
+  let submitted;
+  const app=guestApp('auto',async(_url,options)=>{submitted=JSON.parse(options.body);return {ok:true,json:async()=>({request_id:1,ticket:'synthetic-ticket',status:'open'})}});
+  app.state.cart=[{id:1,qty:1}];
+  app.adjustGuestCart(1,-1);
+  assert.equal(app.state.cart.length,0);
+  app.adjustGuestCart(1,1);
+  app.adjustGuestCart(1,1);
+  assert.equal(app.state.cart[0].qty,2);
+  app.state.cart[0].qty=99;
+  app.adjustGuestCart(1,1);
+  assert.equal(app.state.cart[0].qty,99);
+  app.state.pending=true;
+  app.adjustGuestCart(1,-1);
+  assert.equal(app.state.cart[0].qty,99);
+  app.state.pending=false;
+  await app.sendCart();
+  assert.equal(submitted.quantity,99);
+});
+
+test('stale request search responses cannot overwrite newer results',async()=>{
+  const pending=[];
+  const app=guestApp('auto',(path)=>new Promise(resolve=>pending.push({path,resolve})));
+  Object.assign(app.state,{me:{},business:{slug:'sample'},slug:'sample'});
+  const first=app.loadRequests(false);
+  app.state.requestSearch='new search';
+  const second=app.loadRequests(false);
+  assert.match(pending[1].path,/search=new\+search/);
+  pending[1].resolve({ok:true,json:async()=>({requests:[{id:2}]})});
+  await second;
+  pending[0].resolve({ok:true,json:async()=>({requests:[{id:1}]})});
+  await first;
+  assert.equal(app.state.requestPage.requests[0].id,2);
 });
