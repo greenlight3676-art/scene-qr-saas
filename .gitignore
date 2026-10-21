@@ -1,0 +1,27 @@
+# Secrets, sessions and runtime data
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite
+*.sqlite3
+*.db-*
+*.db-journal
+*.db-shm
+*.db-wal
+*.log
+# Environments, caches, generated files
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+*.py[cod]
+node_modules/
+dist/
+build/
+.DS_Store
+test-artifacts/
+# Historical local UI reference images are not release artifacts.
+beta-*.png
