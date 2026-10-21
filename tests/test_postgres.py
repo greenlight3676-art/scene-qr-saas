@@ -100,20 +100,24 @@ def test_import_missing_source_and_nonempty_schema_are_safe(postgres_schema, tmp
 def test_runtime_role_rejects_ddl_and_metadata_changes(postgres_schema):
     import psycopg
     from psycopg import sql
-    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode, quote
     from storage import verify_postgres
     url, schema = postgres_schema
     role = schema + '_runtime'
     with connect(url) as raw:
         migrate(raw)
-        raw.execute(sql.SQL('CREATE ROLE {}').format(sql.Identifier(role)))
+        raw.execute(sql.SQL('CREATE ROLE {} LOGIN PASSWORD {}').format(
+            sql.Identifier(role), sql.Literal('disposable-runtime-only')))
         raw.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema), sql.Identifier(role)))
         raw.execute(sql.SQL('GRANT SELECT ON scene_migrations TO {}').format(sql.Identifier(role)))
     parsed = urlsplit(url)
     options = dict(parse_qsl(parsed.query))
-    options['options'] += f' -crole={role}'
-    runtime_url = urlunsplit(parsed._replace(query=urlencode(options)))
+    authority = quote(role, safe='') + ':disposable-runtime-only@' + parsed.netloc.rsplit('@', 1)[-1]
+    runtime_url = urlunsplit(parsed._replace(netloc=authority, query=urlencode(options)))
     try:
+        with connect(runtime_url) as raw:
+            identity = raw.execute('SELECT current_user AS effective, session_user AS authenticated').fetchone()
+            assert identity == {'effective':role, 'authenticated':role}
         verify_postgres(runtime_url)
         with connect(runtime_url) as raw:
             for statement in ('CREATE TABLE forbidden(id BIGINT)', 'DELETE FROM scene_migrations',

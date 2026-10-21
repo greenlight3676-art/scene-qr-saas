@@ -170,3 +170,19 @@ Changes prepared for the initial publication:
 
 GitHub source publication does not host the running FastAPI service. GitHub Pages
 cannot execute this backend. No paid host or production database is configured.
+
+### Initial GitHub publication result
+
+- Published 38 source/configuration files on main in commit
+  a0902690e594dcc927fe9acab20b0211060a8888. Verified every published blob hash
+  matches the corresponding local file. No working files were overwritten.
+- GitHub run: https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39594656514
+- Container build/non-demo startup, browser workflows and regular tests passed.
+- PostgreSQL migration CI passed four checks and failed its restricted-role
+  check. The fixture's administrative connection plus startup role option did
+  not produce the intended restricted identity. Kept the runtime guard intact;
+  changed test fixtures to authenticate as actual isolated restricted LOGIN
+  roles with an explicitly disposable fixture password. Added assertions for
+  both authenticated and effective identities before testing permissions.
+- A final non-browser local run passed 23 tests with 10 optional cases skipped;
+  the 5 browser cases passed separately. PostgreSQL validation continues in CI.

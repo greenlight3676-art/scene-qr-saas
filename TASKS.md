@@ -10,8 +10,8 @@
   improvements and Docker module fix.
 - [x] Final available checks: 23 Python tests and 11 frontend tests passed;
   Python compilation and JavaScript syntax passed. See OVERNIGHT_REPORT.md.
-- [ ] Verify real mobile/browser layouts and keyboard flows (Chromium missing).
-- [ ] Build container (Docker unavailable).
+- [x] Verify phone/tablet workflows in real Chromium; five browser checks passed.
+- [x] Build container and verify non-demo startup in GitHub Actions.
 - [ ] Run disposable PostgreSQL integration/RLS checks (test URL missing).
 - [ ] Connect owner-authorized Supabase auth; implement verification/recovery,
   invitation delivery and audit history.
@@ -25,5 +25,8 @@
 - [x] Run all five Chromium phone/tablet tests; fix 768px status touch target.
 - [x] Verify consent, multiple receipts and team-access UI flows in Chromium.
 - [x] Inspect 320px dashboard screenshot and update verification documentation.
-- [ ] Publish initial application to main and verify remote content.
+- [x] Publish initial application to main; verify all 38 source blob hashes.
 - [ ] Inspect GitHub Actions results; fix any confirmed failures.
+
+- [x] Inspect initial GitHub Actions results; identify restricted-role fixture failure.
+- [ ] Confirm repaired PostgreSQL migration and full API parity jobs pass.

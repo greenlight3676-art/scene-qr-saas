@@ -73,7 +73,7 @@ def api_postgres_backend():
     from migrate import migrate, import_sqlite
     from storage import connect, verify_postgres
     from psycopg import sql
-    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode, quote
     name = 'scene_api_' + uuid.uuid4().hex
     role = name + '_runtime'
     parsed = urlsplit(url)
@@ -82,7 +82,8 @@ def api_postgres_backend():
     owner_url = urlunsplit(parsed._replace(query=urlencode(options)))
     with connect(url) as raw:
         raw.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(name)))
-        raw.execute(sql.SQL('CREATE ROLE {} LOGIN').format(sql.Identifier(role)))
+        raw.execute(sql.SQL('CREATE ROLE {} LOGIN PASSWORD {}').format(
+            sql.Identifier(role), sql.Literal('disposable-runtime-only')))
     try:
         with connect(owner_url) as raw:
             migrate(raw)
@@ -91,10 +92,10 @@ def api_postgres_backend():
             raw.execute(sql.SQL('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA {} TO {}').format(sql.Identifier(name), sql.Identifier(role)))
             raw.execute(sql.SQL('REVOKE INSERT,UPDATE,DELETE ON scene_migrations FROM {}').format(sql.Identifier(role)))
             raw.execute(sql.SQL('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA {} TO {}').format(sql.Identifier(name), sql.Identifier(role)))
-        # connect() uses the owner DSN but drops privileges at session startup.
-        # The connection URL carries only the isolated test role, never user data.
-        options['options'] = f'-csearch_path={name} -crole={role}'
-        runtime_url = urlunsplit(parsed._replace(query=urlencode(options)))
+        # Authenticate as the restricted role, rather than relying on a startup
+        # role option on an administrative connection. Password is test-only.
+        authority = quote(role, safe='') + ':disposable-runtime-only@' + parsed.netloc.rsplit('@', 1)[-1]
+        runtime_url = urlunsplit(parsed._replace(netloc=authority, query=urlencode(options)))
         verify_postgres(runtime_url)
         previous = server.DATABASE_URL
         server.DATABASE_URL = runtime_url
