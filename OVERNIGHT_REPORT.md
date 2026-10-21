@@ -274,3 +274,17 @@ delivery, database RLS, durable realtime/abuse protection, contact-data retentio
 policy, authenticated audit history, payment/POS integrations and public hosting.
 No Supabase project is configured for this application. Inquiry messages remain
 private staff requests, not a CRM pipeline or verified lead/conversion metric.
+
+### Feature publication and final interaction checks
+
+Source commit 5598c2077785c0d3c2bc5b3a6c1bf855391b013a was published to main;
+all ten changed files matched local blob hashes. All four CI jobs passed:
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39684257225
+
+Final review additionally ensured that explicit Reset clears unapplied filter
+inputs even when the resulting server data is unchanged, and saving unchanged
+brand settings re-enables its submit button. Added browser checks for both.
+The complete seven-case Chromium suite passed again in 56.34 seconds, frontend
+regressions remained 14/14, and syntax/compilation/whitespace checks passed.
+These follow-up interaction fixes are being published with the existing API,
+PostgreSQL and container checks retained.

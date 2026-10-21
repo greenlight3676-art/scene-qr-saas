@@ -42,4 +42,7 @@
   with server-validated quantities and preserved inquiry drafts.
 - [x] Add owner-only pending invitation listing and revocation.
 - [x] Cover authorization, validation, pagination and phone workflows with tests.
-- [ ] Publish verified code and inspect all four CI jobs; document remaining gates.
+- [x] Publish verified code and inspect all four CI jobs; document remaining gates.
+
+- [x] Verify explicit filter reset and unchanged settings saves in Chromium.
+- [ ] Verify final interaction-fix commit in GitHub Actions and synchronize local Git.

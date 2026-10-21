@@ -221,12 +221,22 @@ def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tm
             expect(dashboard.locator('.request-card')).to_have_count(1)
             expect(dashboard.locator('.request-list')).to_contain_text('Oldest synthetic inquiry')
             expect(dashboard.locator('#nextRequests')).to_be_disabled()
+            dashboard.locator('#requestSearch').fill('Unsubmitted draft filter')
+            dashboard.locator('#clearRequestFilters').click()
+            expect(dashboard.locator('#requestSearch')).to_have_value('')
+            expect(dashboard.locator('#requestKind')).to_have_value('')
             dashboard.locator('#mobileMenu').click()
             dashboard.locator('#mainNav [data-screen="team"]').click()
             dashboard.locator('#inviteForm button[type="submit"]').click()
             expect(dashboard.locator('[data-revoke-invite]')).to_have_count(1)
             dashboard.locator('[data-revoke-invite]').click()
             expect(dashboard.locator('[data-revoke-invite]')).to_have_count(0)
+            dashboard.locator('#mobileMenu').click()
+            dashboard.locator('#mainNav [data-screen="settings"]').click()
+            save=dashboard.locator('#settingsForm button[type="submit"]')
+            with dashboard.expect_response(lambda response:response.request.method=='PATCH' and response.url.endswith('/settings')):
+                save.click()
+            expect(save).to_be_enabled()
             for page in (dashboard,phone):
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
             assert not errors,errors
