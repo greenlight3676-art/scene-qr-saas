@@ -288,3 +288,23 @@ The complete seven-case Chromium suite passed again in 56.34 seconds, frontend
 regressions remained 14/14, and syntax/compilation/whitespace checks passed.
 These follow-up interaction fixes are being published with the existing API,
 PostgreSQL and container checks retained.
+
+### Autonomous batch final verification
+
+Verified source commit: a2ac9b5ee64f8eb5b52f86f9a23a921aa55bfdae.
+All four GitHub Actions jobs passed on that source revision:
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39684567520
+
+- SQLite/API/storage/backup regressions and frontend checks: passed.
+- Five PostgreSQL migration/permission tests and full API parity: passed.
+- Seven Chromium phone/tablet workflows: passed, including final settings-save
+  and filter-reset regressions.
+- Docker build, non-demo startup and static assets: passed.
+
+The planned feature batch is complete. The follow-up documentation commit only
+records these results; it does not change application code or CI configuration.
+No production database, paid infrastructure, secret, force-push or public host
+was used. Current contacts and quantities remain staff request messages; a
+structured lead pipeline and transactional order model are future work, along
+with the production gates above. Documentation distinguishes operational counts
+from qualified leads, conversions, paid orders and unique visitor analytics.

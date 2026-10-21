@@ -45,4 +45,5 @@
 - [x] Publish verified code and inspect all four CI jobs; document remaining gates.
 
 - [x] Verify explicit filter reset and unchanged settings saves in Chromium.
-- [ ] Verify final interaction-fix commit in GitHub Actions and synchronize local Git.
+- [x] Verify final interaction-fix commit in GitHub Actions (all four jobs passed).
+- [x] Complete the planned feature batch and record remaining production gates.
