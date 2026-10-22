@@ -212,3 +212,24 @@ Verified development source `4c18454` passed all four GitHub CI jobs: applicatio
 PostgreSQL/RLS/API parity, seven phone/tablet Chromium workflows, and container
 build/startup. Results and remaining hosted-project/backup gates are recorded in
 [PHASE_1_2_REPORT.md](PHASE_1_2_REPORT.md#final-verification).
+
+### Catalog operations, station availability and selection notes
+
+Owners/managers can edit a published catalog item in place. Its ID remains stable;
+new guests see the updated name/price and earlier requests retain their snapshots.
+Removed items cannot be edited through this control.
+
+QR stations can be renamed, paused and resumed. Rename/pause does not change the
+printed token or internal station code. Paused stations reject new scans, PNG
+requests and guest submissions; existing private receipts remain readable. Resume
+reactivates the same link. **Rotate** still invalidates the old printed token.
+
+Guests can add optional notes (200 characters in the UI) to selected items. Notes
+are included in each per-item staff request, remain in memory through cart changes,
+and clear after all items send successfully. Partial failures keep the note with
+unsent selections. Notes are not saved into browser receipt storage. These are
+unpaid per-item requests, not inventory reservations or grouped confirmed orders.
+
+Analytics includes full-history inquiry stage counts and catalog request/unit counts,
+quote-required requests and historical records with unknown quantities. Counts
+include open/completed requests and do not establish sales, revenue or conversion.

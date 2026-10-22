@@ -19,10 +19,10 @@ function guestApp(industry, fetch, nodes={}) {
   });
   vm.runInContext(source.slice(0, start) + `
     renderGuest=()=>{};toast=()=>{};beginGuestStatusPolling=()=>{};
-    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests};
+    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations};
   })();`, context);
   const app = context.guestTest;
-  app.storage=storage;
+  app.storage=storage;app.context=context;
   Object.assign(app.state, {
     guest: {industry,products:[{id:1,name:'Sample service'},{id:2,name:'Another service'}]},
     qr: 'sample-qr', cart:[{id:1,qty:1},{id:2,qty:1}],
@@ -199,4 +199,49 @@ test('request filter drafts survive a workspace rerender before Apply',()=>{
   assert.match(html,/value="question" selected/);
   assert.match(html,/value="Draft &amp; name"/);
   assert.equal(app.state.requestLead,'');
+});
+
+
+test('selection notes accompany each item and clear after success',async()=>{
+  const bodies=[];
+  const app=guestApp('auto',async (_path,options)=>{
+    bodies.push(JSON.parse(options.body));
+    return {ok:true,json:async()=>({request_id:bodies.length,ticket:'synthetic-notes-receipt',status:'open'})};
+  });
+  app.state.cartNote='Synthetic pickup preference';
+  await app.sendCart();
+  assert.equal(bodies.length,2);
+  assert.ok(bodies.every(body=>body.message==='Synthetic pickup preference'));
+  assert.equal(app.state.cartNote,'');
+  assert.ok(!app.storage.get('scene-receipts:sample-qr').includes('Synthetic pickup preference'));
+});
+
+test('failed selection keeps notes with unsent items',async()=>{
+  const app=guestApp('auto',async()=>({ok:false,json:async()=>({detail:'Try later'})}));
+  app.state.cartNote='Synthetic retry note';
+  await app.sendCart();
+  assert.equal(app.state.cartNote,'Synthetic retry note');
+  assert.equal(app.state.cart.length,2);
+});
+
+test('programmatic scrolling honors reduced motion',()=>{
+  const app=guestApp('auto',async()=>{});
+  app.context.matchMedia=()=>({matches:true});
+  assert.equal(app.motionBehavior(),'auto');
+  app.context.matchMedia=()=>({matches:false});
+  assert.equal(app.motionBehavior(),'smooth');
+});
+
+test('catalog edit and paused station forms escape user content',()=>{
+  const app=guestApp('auto',async()=>{});
+  const name='Sample \" onfocus=\"alert(1)';
+  app.state.business={industry:'auto',slug:'sample',products:[{id:1,name,description:'<script>',category:'Care',price_cents:1200}],stations:[{id:1,label:name,code:'desk',token:'synthetic-token',active:0}]};
+  app.state.editProduct=1;
+  const catalog=app.renderCatalog(),stations=app.renderStations();
+  assert.ok(!catalog.includes('<script>'));
+  assert.ok(catalog.includes('&lt;script&gt;'));
+  assert.ok(catalog.includes('Sample &quot; onfocus=&quot;alert(1)'));
+  assert.match(stations,/QR location paused/);
+  assert.ok(!stations.includes('class="qr-image"'));
+  assert.ok(!stations.includes('data-station-preview='));
 });

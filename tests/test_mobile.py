@@ -255,3 +255,80 @@ def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tm
             phone.screenshot(path=str(tmp_path/f'catalog-{width}.png'),full_page=True)
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize('width',[320,768])
+def test_catalog_edit_station_pause_and_selection_notes(local_site,width):
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            owner=browser.new_context(viewport={'width':width,'height':844},reduced_motion='reduce',base_url=local_site)
+            guest=browser.new_context(viewport={'width':width,'height':844},reduced_motion='reduce',base_url=local_site)
+            registered=owner.request.post('/api/auth/signup',data={'email':'operations-browser@example.invalid','password':'SyntheticOperationsPass123!','name':'Sample operations studio','industry':'auto'})
+            assert registered.ok
+            slug=registered.json()['slug'];board=owner.request.get('/api/admin/'+slug).json()
+            station=board['stations'][0];token=station['token']
+            dashboard,phone=owner.new_page(),guest.new_page()
+            errors=[]
+            for page in (dashboard,phone):page.on('pageerror',lambda error:errors.append(str(error)))
+            dashboard.goto('/')
+            dashboard.locator('#mobileMenu').click()
+            dashboard.locator('#mainNav [data-screen="catalog"]').click()
+            dashboard.locator('#prodName').fill('Synthetic original service')
+            dashboard.locator('#prodPrice').fill('10.50')
+            dashboard.locator('#productForm button[type="submit"]').click()
+            expect(dashboard.locator('.catalog-row')).to_contain_text('Synthetic original service')
+            phone.goto('/?q='+token)
+            phone.locator('[data-add]').click()
+            phone.get_by_role('button',name='Increase Synthetic original service quantity').click()
+            phone.locator('#cartNote').fill('Synthetic guest preference')
+            # Notes survive quantity renders and stay out of receipt persistence.
+            phone.get_by_role('button',name='Increase Synthetic original service quantity').click()
+            expect(phone.locator('#cartNote')).to_have_value('Synthetic guest preference')
+            phone.get_by_role('button',name='Decrease Synthetic original service quantity').click()
+            phone.locator('[data-send-cart]').click()
+            expect(phone.locator('[data-receipt-id]')).to_have_count(1)
+            assert phone.evaluate("!Object.values(sessionStorage).some(value=>value.includes('Synthetic guest preference'))")
+            dashboard.locator('[data-edit-product]').click()
+            expect(dashboard.locator('#prodName')).to_be_focused()
+            dashboard.locator('#cancelProductEdit').click()
+            expect(dashboard.locator('[data-edit-product]')).to_be_focused()
+            dashboard.locator('[data-edit-product]').click()
+            dashboard.locator('#prodName').fill('Synthetic updated service')
+            dashboard.locator('#prodName').press('Tab')
+            expect(dashboard.locator('#prodDesc')).to_be_focused()
+            dashboard.locator('#prodPrice').fill('20.00')
+            dashboard.locator('#productForm button[type="submit"]').click()
+            expect(dashboard.locator('.catalog-row')).to_contain_text('Synthetic updated service')
+            saved=owner.request.get('/api/admin/'+slug).json()['requests'][0]
+            assert (saved['product_name'],saved['unit_price_cents'],saved['quantity'])==('Synthetic original service',1050,2)
+            assert 'Synthetic guest preference' in saved['message']
+            dashboard.locator('#mobileMenu').click()
+            dashboard.locator('#mainNav [data-screen="stations"]').click()
+            settings=dashboard.locator('[data-station-form]')
+            settings.locator('[name="label"]').fill('Renamed synthetic reception')
+            settings.locator('[name="active"]').uncheck()
+            settings.get_by_role('button',name='Save location').click()
+            expect(dashboard.locator('.qr-paused')).to_be_visible()
+            assert owner.request.get('/api/admin/'+slug).json()['stations'][0]['token']==token
+            phone.reload()
+            expect(phone.locator('.loading-phone')).to_contain_text('QR location is unavailable')
+            settings.locator('[name="active"]').check()
+            settings.get_by_role('button',name='Save location').click()
+            expect(dashboard.locator('.qr-image')).to_be_visible()
+            phone.reload()
+            expect(phone.locator('.guest-spot')).to_contain_text('Renamed synthetic reception')
+            expect(phone.locator('.guest-product')).to_contain_text('Synthetic updated service')
+            expect(phone.locator('[data-receipt-id]')).to_have_count(1)
+            dashboard.locator('#mobileMenu').click()
+            dashboard.locator('#mainNav [data-screen="analytics"]').click()
+            expect(dashboard.get_by_role('heading',name='Inquiry stages')).to_be_visible()
+            panel=dashboard.locator('.panel').filter(has=dashboard.get_by_role('heading',name='Catalog requests'))
+            expect(panel).to_contain_text('Known requested units')
+            expect(panel.locator('.analytics-count').filter(has_text='Known requested units')).to_contain_text('2')
+            for page in (dashboard,phone):
+                assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            assert not errors,errors
+        finally:
+            browser.close()

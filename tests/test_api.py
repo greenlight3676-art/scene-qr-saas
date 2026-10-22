@@ -466,3 +466,90 @@ def test_lead_stage_filter_is_tenant_scoped_and_preserves_legacy_unknowns():
         assert owner.get(path,params={'lead_status':'new'}).json()['total']==0
         assert owner.get(path,params={'lead_status':'paid'}).status_code==422
         assert guest.get(path,params={'lead_status':'qualified'}).status_code==401
+
+
+def test_catalog_edits_are_authorized_and_keep_request_snapshots():
+    with TestClient(app) as owner, TestClient(app) as other, TestClient(app) as guest, TestClient(app) as staff:
+        slug,csrf=registration(owner,'catalog-edit-owner@example.invalid','Catalog edit sample')
+        foreign,foreign_csrf=registration(other,'catalog-edit-other@example.invalid','Foreign catalog')
+        board=owner.get('/api/admin/'+slug).json();token=board['stations'][0]['token']
+        body={'name':'Synthetic wash','description':'Sample description','category':'Care','price_cents':1500}
+        created=owner.post(f'/api/admin/{slug}/products',headers=csrf,json=body).json()
+        pid=created['id'];path=f'/api/admin/{slug}/products/{pid}'
+        sent=guest.post(f'/api/q/{token}/requests',json={'kind':'service','product_id':pid,'quantity':2,'message':'Synthetic preference','client_key':'catalog-edit-snapshot-001'})
+        assert sent.status_code==200
+        changed={**body,'name':'Synthetic premium wash','price_cents':3000}
+        assert guest.patch(path,json=changed).status_code==401
+        assert owner.patch(path,json=changed).status_code==403
+        assert other.patch(f'/api/admin/{foreign}/products/{pid}',headers=foreign_csrf,json=changed).status_code==404
+        from urllib.parse import parse_qs,urlsplit
+        invite=owner.post(f'/api/admin/{slug}/invites',headers=csrf,json={'role':'staff'}).json()
+        token_invite=parse_qs(urlsplit(invite['join_url']).query)['invite'][0]
+        assert staff.post('/api/auth/join',json={'token':token_invite,'email':'catalog-edit-staff@example.invalid','password':'SyntheticStaffPass123!'}).status_code==200
+        staff_csrf={'x-scene-csrf':staff.get('/api/me').json()['csrf']}
+        assert staff.patch(path,headers=staff_csrf,json=changed).status_code==403
+        assert owner.patch(path,headers=csrf,json={**changed,'name':'   '}).status_code==422
+        assert owner.patch(path,headers=csrf,json={**changed,'price_cents':True}).status_code==422
+        assert owner.patch(path,headers=csrf,json=changed).status_code==200
+        public=guest.get('/api/q/'+token).json()['products'][0]
+        assert (public['id'],public['name'],public['price_cents'])==(pid,changed['name'],3000)
+        snapshot=owner.get('/api/admin/'+slug).json()['requests'][0]
+        assert (snapshot['product_name'],snapshot['unit_price_cents'],snapshot['quantity'])==('Synthetic wash',1500,2)
+        assert 'Synthetic preference' in snapshot['message']
+        assert owner.delete(path,headers=csrf).status_code==200
+        assert owner.patch(path,headers=csrf,json=changed).status_code==404
+
+
+def test_station_pause_rename_resume_preserves_token_and_private_receipt():
+    with TestClient(app) as owner, TestClient(app) as other, TestClient(app) as guest, TestClient(app) as member:
+        slug,csrf=registration(owner,'station-edit-owner@example.invalid','Station edit sample')
+        foreign,foreign_csrf=registration(other,'station-edit-other@example.invalid','Other stations')
+        board=owner.get('/api/admin/'+slug).json();station=board['stations'][0]
+        token=station['token'];path=f"/api/admin/{slug}/stations/{station['id']}"
+        receipt=guest.post(f'/api/q/{token}/requests',json={'kind':'service','client_key':'station-pause-receipt-001'}).json()
+        payload={'label':'Renamed reception','active':False}
+        assert owner.patch(path,json=payload).status_code==403
+        assert other.patch(f"/api/admin/{foreign}/stations/{station['id']}",headers=foreign_csrf,json=payload).status_code==404
+        assert owner.patch(path,headers=csrf,json={'label':'  ','active':False}).status_code==422
+        assert owner.patch(path,headers=csrf,json={**payload,'active':'false'}).status_code==422
+        from urllib.parse import parse_qs,urlsplit
+        invitation=owner.post(f'/api/admin/{slug}/invites',headers=csrf,json={'role':'staff'}).json()
+        invitation=parse_qs(urlsplit(invitation['join_url']).query)['invite'][0]
+        assert member.post('/api/auth/join',json={'token':invitation,'email':'station-edit-member@example.invalid','password':'SyntheticMemberPass123!'}).status_code==200
+        member_csrf={'x-scene-csrf':member.get('/api/me').json()['csrf']}
+        assert member.patch(path,headers=member_csrf,json=payload).status_code==403
+        assert owner.patch(path,headers=csrf,json=payload).status_code==200
+        assert guest.get('/api/q/'+token).status_code==404
+        assert guest.get('/api/qr/'+token+'.png').status_code==404
+        assert guest.post(f'/api/q/{token}/requests',json={'kind':'service','client_key':'station-paused-submit-001'}).status_code==404
+        status=guest.get(f"/api/guest/requests/{receipt['request_id']}",headers={'x-scene-ticket':receipt['ticket']})
+        assert status.status_code==200 and status.json()['status']=='open'
+        after=owner.get('/api/admin/'+slug).json()['stations'][0]
+        assert (after['token'],after['code'],after['label'])==(token,station['code'],'Renamed reception')
+        # Manager access is sufficient for station setup.
+        team=owner.get(f'/api/admin/{slug}/members').json()['members']
+        uid=next(m['id'] for m in team if m['role']=='staff')
+        assert owner.patch(f'/api/admin/{slug}/members/{uid}',headers=csrf,json={'role':'manager'}).status_code==200
+        assert member.patch(path,headers=member_csrf,json={**payload,'active':True}).status_code==200
+        assert guest.get('/api/q/'+token).json()['stations'][0]['label']=='Renamed reception'
+        assert guest.get('/api/qr/'+token+'.png').status_code==200
+
+
+def test_structured_analytics_include_legacy_unknowns_and_are_tenant_scoped():
+    with TestClient(app) as owner, TestClient(app) as guest, TestClient(app) as other:
+        slug,csrf=registration(owner,'operational-analytics@example.invalid','Operational analytics')
+        foreign,_=registration(other,'operational-foreign@example.invalid','Foreign operational')
+        board=owner.get('/api/admin/'+slug).json();token=board['stations'][0]['token']
+        pid=owner.post(f'/api/admin/{slug}/products',headers=csrf,json={'name':'Synthetic quote item','price_cents':0}).json()['id']
+        assert guest.post(f'/api/q/{token}/requests',json={'kind':'service','product_id':pid,'quantity':3,'client_key':'operational-units-0001'}).status_code==200
+        inquiry=guest.post(f'/api/q/{token}/requests',json={'kind':'question','message':'Synthetic analytics inquiry','client_key':'operational-inquiry-01'}).json()
+        assert owner.patch(f"/api/admin/{slug}/requests/{inquiry['request_id']}/lead",headers=csrf,json={'status':'qualified'}).status_code==200
+        with db() as c:
+            scope(c,'scene.tenant_id',board['id'])
+            c.execute('INSERT INTO requests(business_id,station_id,kind,product_id,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(board['id'],board['stations'][0]['id'],'question',pid,'synthetic-legacy-hash','operational-legacy-key',1,1))
+        analytics=owner.get('/api/admin/'+slug).json()['analytics']
+        assert analytics['lead_stages']=={'new':0,'qualified':1,'closed':0,'unreviewed':1}
+        assert analytics['catalog_requests']=={'requests':2,'units':3,'quote_requests':1,'unknown_quantity_requests':1}
+        assert other.get('/api/admin/'+foreign).json()['analytics']['catalog_requests']['requests']==0
+        assert other.get('/api/admin/'+foreign).json()['analytics']['lead_stages']['qualified']==0
+        assert 'lead_stages' not in guest.get('/api/q/'+token).text

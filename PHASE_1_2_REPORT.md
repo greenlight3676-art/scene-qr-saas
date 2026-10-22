@@ -175,3 +175,42 @@ available. Hosted migrations/restores remain gated. Production authentication/
 recovery, broader tenant RLS, push realtime, durable rate limits, retention/auditing,
 payments and hosting are still open commercial-rollout work. Public API requests
 remain unpaid staff requests; lead stages do not establish purchases or revenue.
+
+## Autonomous operations batch (2026-10-21)
+
+Continuing on `qr-overnight-build` from documentation commit `c9cbe90`.
+Baseline: 30 Python checks and 16 frontend checks passed with the existing local
+virtualenv and documented sandbox timer; PostgreSQL/browser checks run separately
+in CI. Working tree was clean at the start.
+
+Implemented without schema changes:
+- Owner/manager catalog editing with stable IDs and server validation; earlier
+  request name/price/quantity snapshots remain intact. Removed items stay inactive.
+- Owner/manager station rename, pause and resume. Tokens/codes remain stable;
+  paused guest catalog, PNG and submission endpoints return unavailable. Private
+  receipts remain readable, and resuming uses the original printed QR link.
+- Full-history inquiry stage counts and catalog request/unit/quote/unknown quantity
+  analytics. Tenant checks and RLS request scope remain in effect. No inferred
+  legacy quantity, payment, revenue or conversion figures are added.
+- Optional guest selection notes remain only in memory and server request records;
+  notes clear on successful send and survive failures with unsent selections.
+- Labelled editing controls, catalog cancel-focus return, 44px touch targets and
+  reduced-motion-aware programmatic scrolling. Notes appear after item selection.
+
+New regressions cover role/CSRF/tenant boundaries, strict input validation,
+receipt continuity during pause/resume, stable tokens, edit snapshot preservation,
+legacy analytics unknowns, guest note persistence/privacy and reduced motion.
+Two additional Chromium workflows cover 320px/768px catalog editing, keyboard
+focus, QR pause/resume, notes and analytics. CI results are pending publication.
+
+Safe configuration recheck found only placeholder .env.example files in both app
+copies, no matching environment/config project reference, and no Supabase reference
+in inspected home configuration. Connected inventory remains Cutz by Kev/unnamed
+(inactive) and Legends Barbershop (healthy); none is positively mapped to Scene QR.
+No hosted SQL, restore or migration ran. Project identity and backup are still
+unverified. No dependencies were installed locally and no production deployment,
+external message or force push was performed.
+
+Local operations-batch verification: 33 Python checks passed in 59.91 seconds,
+17 skipped (8 PostgreSQL and 9 opt-in browser workflows); all 20 frontend checks
+passed. JavaScript syntax, Python compilation and whitespace checks passed.

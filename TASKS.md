@@ -99,3 +99,18 @@ Final verified source: `4c1845455d4dcf15972d09933598f3fe1101aca1`.
 CI: https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39716306446
 All four jobs passed. Follow-up publication updates documentation only. Supabase
 project identity and backup evidence remain unverified; no hosted migration ran.
+
+## Autonomous operational improvements — 2026-10-21
+
+- [x] Add tenant/role-protected catalog editing with stable item IDs and preserved snapshots.
+- [x] Add station rename/pause/resume without rotating printed QR tokens; preserve receipts.
+- [x] Add full-history inquiry-stage and catalog-request quantity analytics.
+- [x] Add optional selection notes, accessible controls and reduced-motion scrolling.
+- [ ] Run local and GitHub API/PostgreSQL/browser/container checks; fix failures.
+- [ ] Publish verified changes and progress to `qr-overnight-build` only.
+- [x] Recheck safe Supabase configuration; no matching reference exists. Hosted work
+  remains blocked without verified identity/backup.
+
+Local operations-batch verification: 33 Python checks passed, 17 skipped for
+separate PostgreSQL/browser runs; 20 frontend checks, syntax, compilation and
+whitespace checks passed. GitHub CI remains pending for this source revision.

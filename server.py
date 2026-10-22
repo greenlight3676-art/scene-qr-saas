@@ -185,9 +185,12 @@ class Product(NamedInput):
     name: str = Field(min_length=1,max_length=90)
     description: str = Field(default='',max_length=250)
     category: str = Field(default='Featured',max_length=40)
-    price_cents: int = Field(ge=0,le=10000000)
+    price_cents: int = Field(ge=0,le=10000000,strict=True)
 class Spot(NamedInput):
     label: str = Field(min_length=2,max_length=70)
+class StationSettings(Spot):
+    active: bool = Field(strict=True)
+
 class Settings(NamedInput):
     name: str = Field(min_length=2,max_length=80)
     tagline: str = Field(default='',max_length=120)
@@ -385,6 +388,14 @@ async def admin(slug:str,request:Request):
         reqs=[dict(v) for v in c.execute('''SELECT r.id,r.kind,r.message,r.status,r.created_at,r.updated_at'''+PRIVATE_FIELDS+''',s.label AS station FROM requests r JOIN stations s ON s.id=r.station_id WHERE r.business_id=? ORDER BY CASE WHEN r.status='completed' THEN 1 ELSE 0 END,r.id DESC LIMIT 250''',(b['id'],))]
         counts=c.execute('''SELECT count(*) total,sum(CASE WHEN status='open' THEN 1 ELSE 0 END) open,sum(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed FROM requests WHERE business_id=?''',(b['id'],)).fetchone()
         kinds={r['kind']:r['total'] for r in c.execute('SELECT kind,count(*) total FROM requests WHERE business_id=? GROUP BY kind',(b['id'],))}
+        lead_stages={'new':0,'qualified':0,'closed':0,'unreviewed':0}
+        for row in c.execute("SELECT COALESCE(lead_status,'unreviewed') AS stage,count(*) AS total FROM requests WHERE business_id=? AND kind='question' GROUP BY lead_status",(b['id'],)):
+            lead_stages[row['stage']]=row['total']
+        selections=dict(c.execute("""SELECT count(*) AS requests,
+            COALESCE(sum(quantity),0) AS units,
+            COALESCE(sum(CASE WHEN unit_price_cents=0 THEN 1 ELSE 0 END),0) AS quote_requests,
+            COALESCE(sum(CASE WHEN quantity IS NULL THEN 1 ELSE 0 END),0) AS unknown_quantity_requests
+            FROM requests WHERE business_id=? AND product_id IS NOT NULL""",(b['id'],)).fetchone())
         station_scans={r['station_id']:r['total'] for r in c.execute('SELECT station_id,count(*) total FROM scans WHERE business_id=? GROUP BY station_id',(b['id'],))}
         station_requests={r['station_id']:r['total'] for r in c.execute('SELECT station_id,count(*) total FROM requests WHERE business_id=? GROUP BY station_id',(b['id'],))}
         today=ts()//86400
@@ -394,7 +405,7 @@ async def admin(slug:str,request:Request):
         station_activity=[{'label':spot['label'],'scans':station_scans.get(spot['id'],0),'requests':station_requests.get(spot['id'],0)} for spot in spots]
         return {'id':b['id'],'name':b['name'],'slug':b['slug'],'industry':b['industry'],'accent':b['accent'],'tagline':b['tagline'],'role':b['role'],
           'stations':spots,'products':products,'requests':reqs,
-          'analytics':{'total':counts['total'],'open':counts['open'] or 0,'resolved':counts['completed'] or 0,'scans':sum(station_scans.values()),'request_kinds':kinds,'stations':station_activity,'daily':activity}}
+          'analytics':{'total':counts['total'],'open':counts['open'] or 0,'resolved':counts['completed'] or 0,'scans':sum(station_scans.values()),'request_kinds':kinds,'lead_stages':lead_stages,'catalog_requests':selections,'stations':station_activity,'daily':activity}}
 
 @app.get('/api/admin/{slug}/requests')
 async def request_history(slug:str,request:Request,
@@ -471,6 +482,16 @@ async def add_product(slug:str,body:Product,request:Request):
         rid=c.execute('INSERT INTO products(business_id,name,description,category,price_cents) VALUES(?,?,?,?,?)',(b['id'],body.name.strip(),body.description.strip(),body.category.strip() or 'Featured',body.price_cents)).lastrowid
         return {'ok':True,'id':rid}
 
+@app.patch('/api/admin/{slug}/products/{pid}')
+async def edit_product(slug:str,pid:int,body:Product,request:Request):
+    s=user_session(request,True)
+    with db() as c:
+        b=grant(c,slug,s['user_id'],EDIT_ROLES)
+        changed=c.execute('UPDATE products SET name=?,description=?,category=?,price_cents=? WHERE id=? AND business_id=? AND active=1',
+                          (body.name.strip(),body.description.strip(),body.category.strip() or 'Featured',body.price_cents,pid,b['id']))
+        if not changed.rowcount: fail(404,'Published item not found')
+    return {'ok':True}
+
 @app.delete('/api/admin/{slug}/products/{pid}')
 async def remove_product(slug:str,pid:int,request:Request):
     s=user_session(request,True)
@@ -489,6 +510,16 @@ async def create_station(slug:str,body:Spot,request:Request):
         if c.execute('SELECT id FROM stations WHERE business_id=? AND code=?',(b['id'],code)).fetchone(): fail(409,'Location already exists')
         rid=c.execute('INSERT INTO stations(business_id,label,code,token,created_at) VALUES(?,?,?,?,?)',(b['id'],body.label.strip(),code,secrets.token_urlsafe(24),ts())).lastrowid
         return {'ok':True,'id':rid}
+
+@app.patch('/api/admin/{slug}/stations/{spot_id}')
+async def edit_station(slug:str,spot_id:int,body:StationSettings,request:Request):
+    s=user_session(request,True)
+    with db() as c:
+        b=grant(c,slug,s['user_id'],EDIT_ROLES)
+        changed=c.execute('UPDATE stations SET label=?,active=? WHERE id=? AND business_id=?',
+                          (body.label,int(body.active),spot_id,b['id']))
+        if not changed.rowcount: fail(404,'Location not found')
+    return {'ok':True}
 
 @app.post('/api/admin/{slug}/stations/{spot_id}/rotate')
 async def rotate_station(slug:str,spot_id:int,request:Request):
