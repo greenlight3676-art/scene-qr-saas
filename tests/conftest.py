@@ -28,6 +28,8 @@ def sqlite_snapshot(tmp_path):
         c.execute("INSERT INTO sessions VALUES('synthetic-session',1,'synthetic-csrf',2000000000)")
         c.execute("INSERT INTO invites VALUES('synthetic-invite',1,'staff',2000000000,NULL)")
         c.execute('INSERT INTO scans VALUES(1,1,1,1)')
+        from request_schema import upgrade_sqlite
+        upgrade_sqlite(c)
     return source
 
 
@@ -96,6 +98,9 @@ def api_postgres_backend():
         # role option on an administrative connection. Password is test-only.
         authority = quote(role, safe='') + ':disposable-runtime-only@' + parsed.netloc.rsplit('@', 1)[-1]
         runtime_url = urlunsplit(parsed._replace(netloc=authority, query=urlencode(options)))
+        from database_security import harden
+        with connect(owner_url) as raw:
+            harden(raw, role)
         verify_postgres(runtime_url)
         previous = server.DATABASE_URL
         server.DATABASE_URL = runtime_url

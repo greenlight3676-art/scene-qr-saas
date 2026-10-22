@@ -114,7 +114,10 @@ test('consented inquiry reaches staff and stores only private receipt metadata',
   },inquiryFields('guest@example.invalid',true));
   await app.submitGuestMessage({preventDefault(){}});
   assert.equal(body.kind,'question');
-  assert.match(body.message,/Contact \(reply consent\): guest@example.invalid/);
+  assert.equal(body.customer_contact,'guest@example.invalid');
+  assert.equal(body.customer_name,'Sample Guest');
+  assert.equal(body.reply_consent,true);
+  assert.equal(body.message,'Synthetic question');
   assert.ok(body.message.length<=400);
   const stored=app.storage.get('scene-receipts:sample-qr');
   assert.ok(stored.includes('synthetic-private-ticket'));
@@ -172,4 +175,17 @@ test('stale request search responses cannot overwrite newer results',async()=>{
   pending[0].resolve({ok:true,json:async()=>({requests:[{id:1}]})});
   await first;
   assert.equal(app.state.requestPage.requests[0].id,2);
+});
+
+test('lead stage filter is sent with request search',async()=>{
+  let requested;
+  const app=guestApp('auto',async path=>{
+    requested=path;
+    return {ok:true,json:async()=>({requests:[]})};
+  });
+  Object.assign(app.state,{me:{},business:{slug:'sample'},slug:'sample',requestLead:'qualified',requestSearch:'Sample Guest'});
+  await app.loadRequests(false);
+  const params=new URLSearchParams(requested.split('?')[1]);
+  assert.equal(params.get('lead_status'),'qualified');
+  assert.equal(params.get('search'),'Sample Guest');
 });

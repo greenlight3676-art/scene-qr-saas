@@ -47,3 +47,41 @@
 - [x] Verify explicit filter reset and unchanged settings saves in Chromium.
 - [x] Verify final interaction-fix commit in GitHub Actions (all four jobs passed).
 - [x] Complete the planned feature batch and record remaining production gates.
+
+## Supabase recovery/security, then structured leads/selections (2026-10-21)
+
+- [x] Inspect connected Supabase inventory read-only. No project is unambiguously
+  Scene QR; request owner identification. No hosted database was changed.
+- [x] Prepare explicit backend-role database hardening with RLS on every app table,
+  denied browser-role access, tenant-scoped request writes and receipt-only reads.
+  Wire hardened configuration into disposable PostgreSQL CI fixtures.
+- [ ] Run PostgreSQL RLS/import/API checks; unavailable locally (no disposable server).
+- [ ] Owner identifies Scene QR Supabase project; inspect its recovery/security state,
+  prepare a scoped restore/migration preview and obtain required hosted-action approval.
+- [x] Add structured inquiry name/contact/consent timestamps, private contact search,
+  manager/owner lead stages, and catalog quantity/name/price snapshots.
+- [x] Verify API/privacy/authorization and additive SQLite schema preservation:
+  29 Python checks passed using the documented sandbox timer workaround;
+  14 frontend checks passed; JavaScript syntax and Python compilation passed.
+- [ ] Browser layout/keyboard verification and production backup/restore drill.
+
+See `PHASE_1_2_REPORT.md` for commands, boundaries and unverified gates.
+
+## Review and development-branch publication — 2026-10-21
+
+- [x] Review all 16 pending files; preserve a private local snapshot before edits.
+- [x] Confirm GitHub main matches local base; choose existing local branch
+  `qr-overnight-build` as the development publication destination.
+- [x] Re-run baseline: 29 Python and 14 frontend tests passed; PostgreSQL/browser
+  checks skipped locally. Standard TestClient still requires sandbox timer workaround.
+- [x] Fix inherited database-role/ownership bypass checks; add PostgreSQL regressions.
+- [x] Continue lead workflow with full-history lead-stage filters and regressions.
+- [ ] Publish reviewed code and verify remote tree and GitHub Actions.
+- [ ] Identify Scene QR Supabase from configuration and verify a backup before any
+  hosted migration. No matching reference found in either app copy or environment.
+
+- [x] Final available local checks: 30 Python tests and 15 frontend tests passed;
+  syntax/compilation/whitespace checks passed. 8 PostgreSQL and 7 browser cases
+  await GitHub CI; no local tooling was installed.
+- [x] Check home Codex/MCP/Supabase config locations without exposing values:
+  no project-specific Scene QR Supabase identity exists in inspected config.

@@ -39,3 +39,16 @@ class StorageTests(unittest.TestCase):
     def test_no_fallback_for_invalid_database_url(self):
         with self.assertRaises(RuntimeError):
             connect('sqlite:///should-not-fall-back')
+
+
+class SchemaUpgradeTests(unittest.TestCase):
+    def test_existing_request_data_is_preserved_and_unknown_fields_stay_null(self):
+        import sqlite3
+        from request_schema import upgrade_sqlite
+        with sqlite3.connect(':memory:') as c:
+            c.execute('CREATE TABLE requests(id INTEGER PRIMARY KEY,message TEXT)')
+            c.execute("INSERT INTO requests VALUES(1,'Historical synthetic request')")
+            upgrade_sqlite(c)
+            upgrade_sqlite(c)
+            row=c.execute('SELECT message,quantity,customer_contact,reply_consent_at FROM requests').fetchone()
+            self.assertEqual(row,('Historical synthetic request',None,None,None))

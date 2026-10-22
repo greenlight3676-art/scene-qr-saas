@@ -44,6 +44,11 @@ class Connection:
     def __init__(self, raw):
         self.raw = raw
 
+    def scope(self, name, value):
+        if name not in ("scene.tenant_id", "scene.receipt_hash"):
+            raise ValueError("Unsupported transaction scope")
+        self.raw.execute("SELECT set_config(%s, %s, true)", (name, str(value)))
+
     def execute(self, sql, parameters=()):
         match = re.match(r'\s*INSERT INTO (\w+)', sql, re.I)
         identity = bool(match and match[1].lower() in IDENTITY_TABLES)
@@ -63,19 +68,31 @@ def postgres_db(url):
         yield Connection(raw)
 
 
+def verify_runtime_role(raw, role):
+    """Reject direct privileges and roles reachable through SET ROLE."""
+    privileges = raw.execute('''SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls
+        FROM pg_roles WHERE pg_has_role(%s,oid,'MEMBER')''', (role,)).fetchall()
+    if not privileges or any(any(row.values()) for row in privileges):
+        raise RuntimeError('Use a restricted PostgreSQL runtime role')
+    permissions = raw.execute('''SELECT
+        has_schema_privilege(%s,current_schema(),'CREATE') AS schema_create,
+        EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                WHERE n.nspname=current_schema()
+                AND pg_has_role(%s,c.relowner,'MEMBER')) AS owns_objects
+        ''', (role, role)).fetchone()
+    if any(permissions.values()):
+        raise RuntimeError('Runtime role must not own schema objects or create in the application schema, directly or through membership')
+
+
 def verify_postgres(url):
     with connect(url) as raw:
-        role = raw.execute('SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls FROM pg_roles WHERE rolname=current_user').fetchone()
-        if any(role.values()):
-            raise RuntimeError('Use a restricted PostgreSQL runtime role')
-        permissions = raw.execute('''SELECT
-            has_schema_privilege(current_schema(), 'CREATE') AS schema_create,
-            EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                    WHERE n.nspname=current_schema()
-                    AND c.relowner=(SELECT oid FROM pg_roles WHERE rolname=current_user)) AS owns_objects
-        ''').fetchone()
-        if any(permissions.values()):
-            raise RuntimeError('Runtime role must not own schema objects or create in the application schema')
+        role = raw.execute('SELECT current_user AS name').fetchone()['name']
+        verify_runtime_role(raw, role)
+        expected = ('users','businesses','memberships','stations','products','requests','sessions','invites','scans','scene_migrations')
+        protected = raw.execute('''SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+            WHERE n.nspname=current_schema() AND c.relrowsecurity AND c.relname=ANY(%s)''', (list(expected),)).fetchall()
+        if {r['relname'] for r in protected} != set(expected):
+            raise RuntimeError('Run database_security.py with the dedicated runtime role before starting SCENE')
         version = raw.execute('SELECT version FROM scene_migrations').fetchall()
-        if version != [{'version': 1}]:
-            raise RuntimeError('Apply PostgreSQL migration 001 before starting SCENE')
+        if version != [{'version': 2}]:
+            raise RuntimeError('Apply PostgreSQL schema version 2 before starting SCENE')

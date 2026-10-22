@@ -189,3 +189,21 @@ Revocation expires the link without deleting membership or invitation data;
 it does not remove someone who already joined. Use member removal for that.
 Invitation listing/revocation require owner membership, and revocation requires
 CSRF validation. No schema migration or new external service is needed.
+
+### Database security and structured inquiries (2026-10-21)
+
+New inquiry submissions store private contact fields and explicit reply consent
+separately. Owners/managers can update lead stages in Request center. Search also
+matches names/contact details. Catalog requests keep quantity/name/price snapshots;
+these remain unpaid requests for staff confirmation. Historical fields remain
+unknown rather than inferred from free text.
+
+PostgreSQL now requires schema version 2 and explicit database hardening before
+startup. SQLite upgrades additively and stays the local default. See
+[PHASE_1_2_REPORT.md](PHASE_1_2_REPORT.md) for exact boundaries, local test results
+and remaining gates. Supabase project recovery and Supabase Auth are pending;
+no connected hosted merchant project has been modified.
+
+Request center also filters inquiries by **Lead stage** across the complete
+history. Unreviewed legacy inquiries retain unknown stages. Database-role checks
+reject inherited privileges/ownership as well as direct privileges.

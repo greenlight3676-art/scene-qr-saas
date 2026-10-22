@@ -2,7 +2,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY server.py storage.py ./
+COPY server.py storage.py request_schema.py ./
 COPY static ./static
 RUN useradd -r -u 10001 scene && mkdir -p /data && chown scene:scene /data
 USER scene

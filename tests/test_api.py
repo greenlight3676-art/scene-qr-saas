@@ -12,7 +12,7 @@ os.environ['SCENE_DEMO']='1'
 os.environ['SCENE_DATABASE_URL']=''
 sys.path.insert(0,str(ROOT))
 from fastapi.testclient import TestClient
-from server import app, db, sha, ts, RATES
+from server import app, db, sha, ts, RATES, scope
 
 
 @pytest.fixture(autouse=True)
@@ -176,6 +176,7 @@ def test_service_catalog_selections_validate_product_tenant(slug):
         response=c.post(f'/api/q/{token}/requests',json=body)
         assert response.status_code==200
         with db() as connection:
+            scope(connection, 'scene.receipt_hash', sha(response.json()['ticket']))
             row=connection.execute('SELECT product_id,message FROM requests WHERE id=?',
                                    (response.json()['request_id'],)).fetchone()
             assert row['product_id']==product
@@ -263,6 +264,7 @@ def test_analytics_cover_full_history_and_keep_old_open_requests_visible():
         bid, station = board['id'], board['stations'][0]['id']
         today = (ts()//86400)*86400
         with db() as c:
+            scope(c, 'scene.tenant_id', bid)
             for i in range(260):
                 c.execute('INSERT INTO requests(business_id,station_id,kind,status,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',
                           (bid,station,'service','open' if i==0 else 'completed','fixture-hash',f'analytics-fixture-{i}',today-86400*10 if i==0 else today,today))
@@ -308,6 +310,7 @@ def test_request_history_pages_filters_literal_search_and_tenant_isolation():
         board=owner.get('/api/admin/'+slug).json()
         bid=board['id'];station=board['stations'][0]['id']
         with db() as c:
+            scope(c, 'scene.tenant_id', bid)
             for i in range(271):
                 c.execute('INSERT INTO requests(business_id,station_id,kind,message,status,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
                           (bid,station,'question' if i==0 else 'service',
@@ -385,3 +388,81 @@ def test_catalog_quantity_is_validated_and_reaches_private_staff_queue():
         message=owner.get('/api/admin/'+slug).json()['requests'][0]['message']
         assert 'Sample service' in message and 'Quantity 3' in message
         assert 'message' not in result.json()
+
+
+def test_structured_inquiries_consent_privacy_and_lead_permissions():
+    with TestClient(app) as owner, TestClient(app) as other, TestClient(app) as guest:
+        slug, csrf = registration(owner, 'structured-owner@example.invalid', 'Structured Sample')
+        foreign, foreign_csrf = registration(other, 'structured-other@example.invalid', 'Other Sample')
+        token = owner.get('/api/admin/'+slug).json()['stations'][0]['token']
+        payload = {'kind':'question','message':'Synthetic inquiry','customer_name':'Sample Guest',
+                   'customer_contact':'guest@example.invalid','client_key':'structured-inquiry-001'}
+        assert guest.post(f'/api/q/{token}/requests',json=payload).status_code == 400
+        payload['reply_consent'] = True
+        result = guest.post(f'/api/q/{token}/requests',json=payload)
+        assert result.status_code == 200, result.text
+        rid = result.json()['request_id']
+        rows = owner.get(f'/api/admin/{slug}/requests',params={'search':'guest@example.invalid'}).json()['requests']
+        row = next(r for r in rows if r['id']==rid)
+        assert row['customer_name']=='Sample Guest' and row['reply_consent_at']
+        assert row['message']=='Synthetic inquiry' and row['lead_status']=='new'
+        assert 'customer_contact' not in guest.get('/api/q/'+token).text
+        receipt = guest.get(f'/api/guest/requests/{rid}',headers={'x-scene-ticket':result.json()['ticket']})
+        assert 'guest@example.invalid' not in receipt.text
+        assert owner.patch(f'/api/admin/{slug}/requests/{rid}/lead',json={'status':'qualified'}).status_code==403
+        assert other.patch(f'/api/admin/{foreign}/requests/{rid}/lead',json={'status':'qualified'},headers=foreign_csrf).status_code==404
+        assert owner.patch(f'/api/admin/{slug}/requests/{rid}/lead',json={'status':'qualified'},headers=csrf).status_code==200
+        assert owner.get(f'/api/admin/{slug}/requests').json()['requests'][0]['lead_status']=='qualified'
+        from urllib.parse import urlsplit, parse_qs
+        invite=owner.post(f'/api/admin/{slug}/invites',json={'role':'staff'},headers=csrf).json()
+        invitation=parse_qs(urlsplit(invite['join_url']).query)['invite'][0]
+        with TestClient(app) as staff:
+            assert staff.post('/api/auth/join',json={'token':invitation,'email':'structured-staff@example.invalid','password':'SyntheticStaffPass123!'}).status_code==200
+            staff_csrf={'x-scene-csrf':staff.get('/api/me').json()['csrf']}
+            assert staff.patch(f'/api/admin/{slug}/requests/{rid}/lead',json={'status':'closed'},headers=staff_csrf).status_code==403
+        retry=guest.post(f'/api/q/{token}/requests',json=payload,headers={'x-scene-ticket':result.json()['ticket']})
+        assert retry.json()['request_id']==rid
+
+
+def test_structured_catalog_snapshot_survives_product_changes():
+    with TestClient(app) as owner, TestClient(app) as guest:
+        slug,csrf=registration(owner,'snapshot-owner@example.invalid','Snapshot Sample')
+        board=owner.get('/api/admin/'+slug).json()
+        token=board['stations'][0]['token']
+        product=owner.post(f'/api/admin/{slug}/products',json={'name':'Synthetic Service','price_cents':2500},headers=csrf).json()
+        # Fetch the catalog ID through the documented public API.
+        pid=guest.get('/api/q/'+token).json()['products'][-1]['id']
+        sent=guest.post(f'/api/q/{token}/requests',json={'kind':'service','product_id':pid,'quantity':3,'client_key':'structured-snapshot-001'})
+        assert sent.status_code==200,sent.text
+        owner.delete(f'/api/admin/{slug}/products/{pid}',headers=csrf)
+        row=owner.get(f'/api/admin/{slug}/requests').json()['requests'][0]
+        assert (row['quantity'],row['product_name'],row['unit_price_cents'])==(3,'Synthetic Service',2500)
+        assert row['customer_contact'] is None and row['lead_status'] is None
+        assert owner.patch(f"/api/admin/{slug}/requests/{row['id']}/lead",json={'status':'qualified'},headers=csrf).status_code==400
+
+
+def test_lead_stage_filter_is_tenant_scoped_and_preserves_legacy_unknowns():
+    with TestClient(app) as owner, TestClient(app) as guest, TestClient(app) as other:
+        slug,csrf=registration(owner,'lead-filter-owner@example.invalid','Lead filter sample')
+        foreign,_=registration(other,'lead-filter-other@example.invalid','Other lead sample')
+        board=owner.get('/api/admin/'+slug).json()
+        token=board['stations'][0]['token']
+        path=f'/api/admin/{slug}/requests'
+        ids=[]
+        for i in range(3):
+            result=guest.post(f'/api/q/{token}/requests',json={'kind':'question','message':'Synthetic filter inquiry','client_key':f'lead-filter-sample-{i:03}'})
+            assert result.status_code==200,result.text
+            ids.append(result.json()['request_id'])
+        assert owner.patch(f'{path}/{ids[0]}/lead',headers=csrf,json={'status':'qualified'}).status_code==200
+        assert owner.patch(f'{path}/{ids[1]}/lead',headers=csrf,json={'status':'closed'}).status_code==200
+        with db() as c:
+            scope(c,'scene.tenant_id',board['id'])
+            c.execute('UPDATE requests SET lead_status=NULL WHERE id=? AND business_id=?',(ids[2],board['id']))
+        for stage,rid in [('qualified',ids[0]),('closed',ids[1]),('unreviewed',ids[2])]:
+            page=owner.get(path,params={'lead_status':stage,'limit':1}).json()
+            assert page['total']==1 and page['requests'][0]['id']==rid
+            assert not page['has_more']
+            assert other.get(f'/api/admin/{foreign}/requests',params={'lead_status':stage}).json()['total']==0
+        assert owner.get(path,params={'lead_status':'new'}).json()['total']==0
+        assert owner.get(path,params={'lead_status':'paid'}).status_code==422
+        assert guest.get(path,params={'lead_status':'qualified'}).status_code==401

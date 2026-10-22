@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sqlite3
 from storage import connect, IDENTITY_TABLES
+from request_schema import FIELDS
 
 ROOT = Path(__file__).resolve().parent
 TABLES = ('users', 'businesses', 'memberships', 'stations', 'products', 'requests', 'sessions', 'invites', 'scans')
@@ -13,14 +14,20 @@ def migrate(raw):
     raw.execute('SELECT pg_advisory_xact_lock(73623601)')
     raw.execute('CREATE TABLE IF NOT EXISTS scene_migrations(version BIGINT PRIMARY KEY)')
     versions = raw.execute('SELECT version FROM scene_migrations').fetchall()
-    if versions:
-        if versions != [{'version': 1}]:
-            raise RuntimeError('Unknown database migration version')
+    if versions and versions not in ([{'version': 1}], [{'version': 2}]):
+        raise RuntimeError('Unknown database migration version')
+    if versions == [{'version': 2}]:
+        return
+    if versions == [{'version': 1}]:
+        for name, declaration in FIELDS.items():
+            raw.execute(f'ALTER TABLE requests ADD COLUMN {name} {declaration}')
+        raw.execute('UPDATE scene_migrations SET version=2')
         return
     if any(raw.execute('SELECT to_regclass(%s) AS name', (table,)).fetchone()['name'] for table in TABLES):
         raise RuntimeError('First migration requires an empty application schema')
     raw.execute((ROOT / 'migrations/001_postgres.sql').read_text())
     raw.execute('INSERT INTO scene_migrations VALUES (1)')
+    migrate(raw)
 
 
 def import_sqlite(raw, source):

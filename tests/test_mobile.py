@@ -158,6 +158,17 @@ def test_mobile_inquiries_receipts_and_owner_team_controls(local_site, width):
             dashboard.locator('#mobileMenu').click()
             dashboard.locator('#mainNav [data-screen="requests"]').click()
             expect(dashboard.locator('.request-card',has_text='guest@example.invalid')).to_have_count(1)
+            dashboard.locator('[data-lead-id]').select_option('qualified')
+            expect(dashboard.locator('[data-lead-id]')).to_have_value('qualified')
+            dashboard.locator('#requestLead').select_option('qualified')
+            dashboard.locator('#requestSearchForm button[type="submit"]').click()
+            expect(dashboard.locator('.request-card')).to_have_count(1)
+            dashboard.locator('#requestLead').select_option('closed')
+            dashboard.locator('#requestSearchForm button[type="submit"]').click()
+            expect(dashboard.locator('.request-card')).to_have_count(0)
+            dashboard.locator('#clearRequestFilters').click()
+            expect(dashboard.locator('.request-card')).to_have_count(3)
+            assert dashboard.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
             assert not errors, errors
         finally:
             browser.close()

@@ -52,3 +52,23 @@ invite reuse, tenant A/B roles and guest privacy), import failure/recovery fixtu
 restricted-role permission tests, RLS negative tests, live backup recovery and
 real phone/browser layout verification. No POS, payment or reservation integration
 was added. Submissions remain requests for staff.
+
+## Version 2 hardening preparation (supersedes the earlier no-RLS statement)
+
+Review `PHASE_1_2_REPORT.md` before cutover. `python3 migrate.py up` now adds nullable
+structured-request fields and advances the version from 1 to 2, in one transaction.
+Before startup, use the schema owner to run:
+
+```bash
+python3 database_security.py --runtime-role YOUR_DEDICATED_BACKEND_ROLE
+```
+
+It uses `SCENE_MIGRATION_DATABASE_URL`; never put that URL in source or a browser.
+Run only on an approved destination with a verified backup. The command grants no
+new table privileges. Provision the existing restricted-role grants first.
+All ten tables get backend-only RLS policies; requests additionally enforce tenant
+context and SELECT-only receipt lookup. Existing unknown policies cause rollback.
+Other tables remain tenant-checked by the server, with backend-wide DB policies.
+PostgreSQL startup fails until RLS and version 2 are present. Do not apply this to
+an unidentified Supabase project. Verify the disposable PostgreSQL suite and API
+parity before a hosted migration. This session did not run those database checks.

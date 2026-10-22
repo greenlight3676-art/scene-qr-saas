@@ -13,6 +13,7 @@ import re
 import secrets
 import sqlite3
 from storage import postgres_db, verify_postgres
+from request_schema import upgrade_sqlite, PRIVATE_FIELDS
 import threading
 import time
 from contextlib import contextmanager
@@ -132,6 +133,7 @@ def init():
         CREATE INDEX IF NOT EXISTS idx_sessions ON sessions(expires_at);
         CREATE INDEX IF NOT EXISTS idx_scans ON scans(business_id,created_at DESC);
         ''')
+        upgrade_sqlite(c)
         if DEMO and c.execute('SELECT COUNT(*) FROM users').fetchone()[0]==0:
             c.execute('INSERT INTO users(email,password,created_at) VALUES(?,?,?)', ('demo@scene.local',password_hash('SceneDemo2026!'),ts()))
             uid = c.execute('SELECT id FROM users WHERE email=?',('demo@scene.local',)).fetchone()[0]
@@ -171,8 +173,14 @@ class NewRequest(BaseModel):
     product_id: int|None = Field(default=None,gt=0,le=9223372036854775807,strict=True)
     quantity: int = Field(default=1,ge=1,le=99,strict=True)
     client_key: str = Field(min_length=20,max_length=100)
+    customer_name: str = Field(default='',max_length=50)
+    customer_contact: str = Field(default='',max_length=100)
+    reply_consent: bool = Field(default=False,strict=True)
 class ChangeStatus(BaseModel):
     status: Literal['in_progress','completed']
+class LeadStatus(BaseModel):
+    status: Literal['new','qualified','closed']
+
 class Product(NamedInput):
     name: str = Field(min_length=1,max_length=90)
     description: str = Field(default='',max_length=250)
@@ -203,10 +211,15 @@ def user_session(request: Request, mutate=False):
                 fail(403,'Invalid session token')
         return session
 
+def scope(c, name, value):
+    if hasattr(c, "scope"):
+        c.scope(name, value)
+
 def grant(c, slug, uid, roles=None):
     row = c.execute('''SELECT b.*,m.role FROM businesses b JOIN memberships m ON m.business_id=b.id WHERE b.slug=? AND m.user_id=?''',(slug,uid)).fetchone()
     if row is None: fail(404,'Business not found')
     if roles and row['role'] not in roles: fail(403,'Insufficient permissions')
+    scope(c, 'scene.tenant_id', row['id'])
     return row
 
 def signin(response, uid):
@@ -224,6 +237,7 @@ def public_bundle(c, b, spot):
 def resolve_q(c, token):
     row=c.execute('''SELECT s.id station_id,s.label,s.code,s.business_id,b.id,b.name,b.slug,b.industry,b.accent,b.tagline FROM stations s JOIN businesses b ON b.id=s.business_id WHERE s.token=? AND s.active=1''',(token,)).fetchone()
     if not row: fail(404,'QR location is unavailable')
+    scope(c, 'scene.tenant_id', row['business_id'])
     return row
 
 @app.middleware('http')
@@ -328,6 +342,8 @@ async def guest_request(token: str, body: NewRequest, request: Request):
     same_origin(request);rate_limit(request,'submit:'+token[:12],12,60)
     with db() as c:
         q=resolve_q(c,token)
+        if body.customer_contact.strip() and not body.reply_consent: fail(400,'Reply consent is required for contact details')
+        if body.kind != 'question' and (body.customer_name.strip() or body.customer_contact.strip() or body.reply_consent): fail(400,'Contact details belong on inquiries')
         if body.kind not in ALLOWED_KINDS[q['industry']]: fail(400,'Request not supported here')
         prior=c.execute('SELECT id,station_id,receipt_hash,status FROM requests WHERE business_id=? AND client_key=?',(q['business_id'],body.client_key)).fetchone()
         if prior:
@@ -337,7 +353,7 @@ async def guest_request(token: str, body: NewRequest, request: Request):
             return {'ok':True,'request_id':prior['id'],'ticket':ticket,'status':prior['status'],'already_sent':True,'note':'Request already received.'}
         item=None
         if body.kind=='order' or body.product_id is not None:
-            item=c.execute('SELECT id,name FROM products WHERE business_id=? AND id=? AND active=1',(q['business_id'],body.product_id)).fetchone()
+            item=c.execute('SELECT id,name,price_cents FROM products WHERE business_id=? AND id=? AND active=1',(q['business_id'],body.product_id)).fetchone()
             if not item: fail(400,'Select a valid item')
         message=body.message.strip()
         if body.kind=='question' and not message: fail(400,'Enter a message for the team')
@@ -346,6 +362,7 @@ async def guest_request(token: str, body: NewRequest, request: Request):
         if item and body.quantity!=1: message+=f' · Quantity {body.quantity}'
         receipt=secrets.token_urlsafe(32)
         rid=c.execute('''INSERT INTO requests(business_id,station_id,kind,message,product_id,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)''',(q['business_id'],q['station_id'],body.kind,message,item['id'] if item else None,sha(receipt),body.client_key,ts(),ts())).lastrowid
+        c.execute('UPDATE requests SET quantity=?,product_name=?,unit_price_cents=?,customer_name=?,customer_contact=?,reply_consent_at=?,lead_status=? WHERE id=? AND business_id=?', (body.quantity if item else None,item['name'] if item else None,item['price_cents'] if item else None,body.customer_name.strip() or None,body.customer_contact.strip() or None,ts() if body.reply_consent and body.customer_contact.strip() else None,'new' if body.kind=='question' else None,rid,q['business_id']))
         return {'ok':True,'request_id':rid,'ticket':receipt,'status':'open','note':'Staff received your service request. This is not a paid order or confirmed booking.'}
 
 @app.get('/api/guest/requests/{rid}')
@@ -353,6 +370,7 @@ async def guest_status(rid:int,request:Request):
     ticket=request.headers.get('x-scene-ticket','')
     if len(ticket)<25: fail(401,'Request receipt required')
     with db() as c:
+        scope(c, 'scene.receipt_hash', sha(ticket))
         row=c.execute('SELECT status,receipt_hash,updated_at FROM requests WHERE id=?',(rid,)).fetchone()
         if row is None or not hmac.compare_digest(sha(ticket),row['receipt_hash']): fail(404,'Request not found')
         return {'status':row['status'],'updated_at':row['updated_at']}
@@ -364,7 +382,7 @@ async def admin(slug:str,request:Request):
         b=grant(c,slug,user['user_id'])
         spots=[dict(v) for v in c.execute('SELECT id,label,code,token,active FROM stations WHERE business_id=? ORDER BY id',(b['id'],))]
         products=[dict(v) for v in c.execute('SELECT id,name,description,category,price_cents,active FROM products WHERE business_id=? AND active=1 ORDER BY id',(b['id'],))]
-        reqs=[dict(v) for v in c.execute('''SELECT r.id,r.kind,r.message,r.status,r.created_at,r.updated_at,s.label AS station FROM requests r JOIN stations s ON s.id=r.station_id WHERE r.business_id=? ORDER BY CASE WHEN r.status='completed' THEN 1 ELSE 0 END,r.id DESC LIMIT 250''',(b['id'],))]
+        reqs=[dict(v) for v in c.execute('''SELECT r.id,r.kind,r.message,r.status,r.created_at,r.updated_at'''+PRIVATE_FIELDS+''',s.label AS station FROM requests r JOIN stations s ON s.id=r.station_id WHERE r.business_id=? ORDER BY CASE WHEN r.status='completed' THEN 1 ELSE 0 END,r.id DESC LIMIT 250''',(b['id'],))]
         counts=c.execute('''SELECT count(*) total,sum(CASE WHEN status='open' THEN 1 ELSE 0 END) open,sum(CASE WHEN status='completed' THEN 1 ELSE 0 END) completed FROM requests WHERE business_id=?''',(b['id'],)).fetchone()
         kinds={r['kind']:r['total'] for r in c.execute('SELECT kind,count(*) total FROM requests WHERE business_id=? GROUP BY kind',(b['id'],))}
         station_scans={r['station_id']:r['total'] for r in c.execute('SELECT station_id,count(*) total FROM scans WHERE business_id=? GROUP BY station_id',(b['id'],))}
@@ -381,6 +399,7 @@ async def admin(slug:str,request:Request):
 @app.get('/api/admin/{slug}/requests')
 async def request_history(slug:str,request:Request,
                           status:Literal['all','open','in_progress','completed']='all',
+                          lead_status:Literal['','new','qualified','closed','unreviewed']='',
                           kind:str=Query(default='',max_length=30),
                           search:str=Query(default='',max_length=100),
                           station_id:int|None=Query(default=None,gt=0,le=9223372036854775807),
@@ -390,6 +409,12 @@ async def request_history(slug:str,request:Request,
     with db() as c:
         b=grant(c,slug,s['user_id'])
         clauses=['r.business_id=?']; values=[b['id']]
+        if lead_status:
+            clauses.append("r.kind='question'")
+            if lead_status == 'unreviewed':
+                clauses.append('r.lead_status IS NULL')
+            else:
+                clauses.append('r.lead_status=?');values.append(lead_status)
         if kind:
             if kind not in ALLOWED_KINDS[b['industry']]: fail(400,'Unsupported request type')
             clauses.append('r.kind=?');values.append(kind)
@@ -399,8 +424,8 @@ async def request_history(slug:str,request:Request,
             clauses.append('r.station_id=?');values.append(station_id)
         if search.strip():
             literal=search.strip().lower().replace('!','!!').replace('%','!%').replace('_','!_')
-            clauses.append("(LOWER(r.message) LIKE ? ESCAPE '!' OR LOWER(s.label) LIKE ? ESCAPE '!')")
-            values.extend(['%'+literal+'%']*2)
+            clauses.append("(LOWER(r.message) LIKE ? ESCAPE '!' OR LOWER(s.label) LIKE ? ESCAPE '!' OR LOWER(COALESCE(r.customer_name,'')) LIKE ? ESCAPE '!' OR LOWER(COALESCE(r.customer_contact,'')) LIKE ? ESCAPE '!')")
+            values.extend(['%'+literal+'%']*4)
         source=' FROM requests r JOIN stations s ON s.id=r.station_id WHERE '+' AND '.join(clauses)
         counts={'all':0,'open':0,'in_progress':0,'completed':0}
         for row in c.execute('SELECT r.status,count(*) total'+source+' GROUP BY r.status',tuple(values)):
@@ -408,10 +433,22 @@ async def request_history(slug:str,request:Request,
         total=counts[status]
         if status!='all': source+=' AND r.status=?';values.append(status)
         if before is not None: source+=' AND r.id<?';values.append(before)
-        rows=[dict(r) for r in c.execute('SELECT r.id,r.kind,r.message,r.status,r.created_at,r.updated_at,s.label AS station'+source+' ORDER BY r.id DESC LIMIT ?',tuple(values+[limit+1]))]
+        rows=[dict(r) for r in c.execute('SELECT r.id,r.kind,r.message,r.status,r.created_at,r.updated_at'+PRIVATE_FIELDS+',s.label AS station'+source+' ORDER BY r.id DESC LIMIT ?',tuple(values+[limit+1]))]
         more=len(rows)>limit;rows=rows[:limit]
         return {'requests':rows,'total':total,'status_counts':counts,'has_more':more,
                 'next_before':rows[-1]['id'] if more else None}
+
+
+@app.patch('/api/admin/{slug}/requests/{rid}/lead')
+async def update_lead(slug:str,rid:int,body:LeadStatus,request:Request):
+    s=user_session(request,True)
+    with db() as c:
+        b=grant(c,slug,s['user_id'],EDIT_ROLES)
+        row=c.execute('SELECT kind FROM requests WHERE id=? AND business_id=?',(rid,b['id'])).fetchone()
+        if not row: fail(404,'Request not found')
+        if row['kind']!='question': fail(400,'Only inquiries have lead stages')
+        c.execute('UPDATE requests SET lead_status=?,updated_at=? WHERE id=? AND business_id=?',(body.status,ts(),rid,b['id']))
+    return {'ok':True}
 
 @app.patch('/api/admin/{slug}/requests/{rid}')
 async def update_request(slug:str,rid:int,body:ChangeStatus,request:Request):

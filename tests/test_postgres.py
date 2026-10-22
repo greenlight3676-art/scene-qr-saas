@@ -110,6 +110,8 @@ def test_runtime_role_rejects_ddl_and_metadata_changes(postgres_schema):
             sql.Identifier(role), sql.Literal('disposable-runtime-only')))
         raw.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema), sql.Identifier(role)))
         raw.execute(sql.SQL('GRANT SELECT ON scene_migrations TO {}').format(sql.Identifier(role)))
+        from database_security import harden
+        harden(raw, role)
     parsed = urlsplit(url)
     options = dict(parse_qsl(parsed.query))
     authority = quote(role, safe='') + ':disposable-runtime-only@' + parsed.netloc.rsplit('@', 1)[-1]
@@ -133,3 +135,89 @@ def test_runtime_role_rejects_ddl_and_metadata_changes(postgres_schema):
         with connect(url) as raw:
             raw.execute(sql.SQL('DROP OWNED BY {}').format(sql.Identifier(role)))
             raw.execute(sql.SQL('DROP ROLE {}').format(sql.Identifier(role)))
+
+
+def test_rls_denies_unscoped_reads_cross_tenant_writes_and_browser_roles(postgres_schema):
+    import psycopg
+    from psycopg import sql
+    from database_security import harden
+    url,schema=postgres_schema
+    role=schema+'_backend'
+    browser=schema+'_browser'
+    with connect(url) as raw:
+        try:
+            migrate(raw)
+            raw.execute(sql.SQL('CREATE ROLE {}').format(sql.Identifier(role)))
+            raw.execute(sql.SQL('CREATE ROLE {}').format(sql.Identifier(browser)))
+            for name in (role,browser):
+                raw.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema),sql.Identifier(name)))
+                raw.execute(sql.SQL('GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA {} TO {}').format(sql.Identifier(schema),sql.Identifier(name)))
+                raw.execute(sql.SQL('GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA {} TO {}').format(sql.Identifier(schema),sql.Identifier(name)))
+            c=Connection(raw)
+            uid=c.execute('INSERT INTO users(email,password,created_at) VALUES(?,?,?)',('synthetic@example.invalid','synthetic-hash',1)).lastrowid
+            for bid in (1,2):
+                raw.execute('INSERT INTO businesses(id,owner_id,name,slug,industry,created_at) VALUES(%s,%s,%s,%s,%s,1)',(bid,uid,'Sample',str(bid),'auto'))
+                raw.execute('INSERT INTO stations(id,business_id,label,code,token,created_at) VALUES(%s,%s,%s,%s,%s,1)',(bid,bid,'Desk','desk',str(bid)))
+                raw.execute("INSERT INTO requests(business_id,station_id,kind,receipt_hash,client_key,created_at,updated_at) VALUES(%s,%s,'service',%s,%s,1,1)",(bid,bid,'synthetic-receipt-'+str(bid),str(bid)))
+            harden(raw,role)
+            harden(raw,role)
+            raw.execute(sql.SQL('SET LOCAL ROLE {}').format(sql.Identifier(role)))
+            assert raw.execute('SELECT id FROM requests').fetchall()==[]
+            c.scope('scene.tenant_id',1)
+            assert len(raw.execute('SELECT id FROM requests').fetchall())==1
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                with raw.transaction():
+                    raw.execute('UPDATE requests SET business_id=2,station_id=2 WHERE business_id=1')
+            c.scope('scene.tenant_id','')
+            c.scope('scene.receipt_hash','synthetic-receipt-2')
+            assert len(raw.execute('SELECT id FROM requests').fetchall())==1
+            raw.execute('RESET ROLE')
+            raw.execute(sql.SQL('SET LOCAL ROLE {}').format(sql.Identifier(browser)))
+            for table in ('users','sessions','requests','invites'):
+                assert raw.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table))).fetchall()==[]
+        finally:
+            raw.rollback()  # roles, schema contents and synthetic data never persist
+
+
+def test_version_one_upgrade_preserves_historical_requests(postgres_schema):
+    from pathlib import Path
+    from request_schema import FIELDS
+    url,_=postgres_schema
+    with connect(url) as raw:
+        raw.execute((Path(__file__).resolve().parents[1]/'migrations/001_postgres.sql').read_text())
+        raw.execute('CREATE TABLE scene_migrations(version BIGINT PRIMARY KEY)')
+        raw.execute('INSERT INTO scene_migrations VALUES(1)')
+        c=Connection(raw)
+        uid=c.execute('INSERT INTO users(email,password,created_at) VALUES(?,?,?)',('upgrade@example.invalid','synthetic-hash',1)).lastrowid
+        bid=c.execute('INSERT INTO businesses(owner_id,name,slug,industry,created_at) VALUES(?,?,?,?,?)',(uid,'Synthetic','upgrade','auto',1)).lastrowid
+        sid=c.execute('INSERT INTO stations(business_id,label,code,token,created_at) VALUES(?,?,?,?,?)',(bid,'Desk','desk','synthetic-upgrade-qr',1)).lastrowid
+        rid=c.execute('INSERT INTO requests(business_id,station_id,kind,message,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)',(bid,sid,'question','Historical synthetic inquiry','synthetic-receipt','synthetic-key',1,1)).lastrowid
+        migrate(raw)
+        migrate(raw)
+        row=raw.execute('SELECT * FROM requests WHERE id=%s',(rid,)).fetchone()
+        assert row['message']=='Historical synthetic inquiry'
+        assert all(row[name] is None for name in FIELDS)
+        assert raw.execute('SELECT version FROM scene_migrations').fetchone()['version']==2
+
+
+def test_hardening_rejects_inherited_table_ownership(postgres_schema):
+    from psycopg import sql
+    from database_security import harden
+    from storage import verify_runtime_role
+    url,schema=postgres_schema
+    with connect(url) as raw:
+        try:
+            migrate(raw)
+            parent,backend=schema+'_owner',schema+'_backend'
+            for role in (parent,backend):
+                raw.execute(sql.SQL('CREATE ROLE {}').format(sql.Identifier(role)))
+                raw.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema),sql.Identifier(role)))
+            raw.execute(sql.SQL('ALTER TABLE users OWNER TO {}').format(sql.Identifier(parent)))
+            raw.execute(sql.SQL('GRANT {} TO {}').format(sql.Identifier(parent),sql.Identifier(backend)))
+            with pytest.raises(RuntimeError,match='through membership'):
+                verify_runtime_role(raw,backend)
+            with pytest.raises(RuntimeError,match='through membership'):
+                harden(raw,backend)
+            assert not raw.execute("SELECT relrowsecurity AS enabled FROM pg_class WHERE oid='requests'::regclass").fetchone()['enabled']
+        finally:
+            raw.rollback()
