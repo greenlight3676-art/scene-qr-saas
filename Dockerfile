@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install the PostgreSQL adapter as well as the base API dependencies.
+# SQLite remains supported for local/demo runs.
+COPY requirements.txt requirements-postgres.txt ./
+RUN pip install --no-cache-dir -r requirements-postgres.txt
 COPY server.py storage.py request_schema.py ./
 COPY static ./static
 RUN useradd -r -u 10001 scene && mkdir -p /data && chown scene:scene /data
