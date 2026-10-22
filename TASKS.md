@@ -125,3 +125,33 @@ checks, 27 PostgreSQL API checks, 9 Chromium workflows, and container build/star
 https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39717836606
 No hosted database or production deployment changed. Remaining commercial gates
 are tracked above; Supabase identity/backup are still unverified.
+
+## Overnight launcher — 2026-10-21
+
+- [x] Save the owner's six-round launcher at `/home/greenlight3676/qr-overnight.sh`,
+  mark executable and verify with `bash -n` (passed).
+- [ ] Start overnight execution. Blocked: `command -v codex` finds no executable
+  in the current PATH. tmux is available; no session was started, no packages
+  installed and no automated rounds or pushes were performed by this launcher.
+
+## Supabase CLI link — 2026-10-21
+
+- [x] Record owner-supplied project reference `cwehqnziwabvnzviaqlf` and scoped
+  login/link authorization in `config/APPROVALS.md`.
+- [ ] Authenticate CLI and link project. No standalone Supabase CLI is installed;
+  offline npx failed with ENOTCACHED. Requested `npx supabase login` produced no
+  login prompt while waiting for package resolution and was interrupted.
+  Linking was not attempted because authentication did not complete.
+  No hosted database changes were made.
+
+## Founder’s Test audit — 2026-10-22
+
+- [x] Import and hash-verify six newer remote commits through `6837e31`, preserving
+  pending local documents; read Founder lifecycle, CI, Docker and Supabase records.
+- [x] Run original baseline: 33 Python checks passed, 17 skipped with documented
+  sandbox timer; JavaScript checks passed. Reproduce the new Founder gate failure.
+- [x] Fix reproduced ID overflow, uncertain-delivery duplicates, stale private UI
+  and Founder assertion regressions; local 38 Python / 24 JS checks pass.
+- [x] Record requirement-level PASS/FAIL/BLOCKED evidence in FOUNDER_TEST_REPORT.md;
+  commercial launch fails. Add CI browser lost-response and container restart checks.
+- [ ] Commit/publish verified development changes and inspect GitHub CI.

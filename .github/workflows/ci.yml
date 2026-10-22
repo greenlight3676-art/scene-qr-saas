@@ -84,7 +84,14 @@ jobs:
       - name: Mobile guest, inquiry, receipt and staff-access workflows
         env:
           SCENE_BROWSER_TESTS: '1'
-        run: python -m pytest -q tests/test_mobile.py
+        run: python -m pytest -q tests/test_mobile.py --basetemp=test-artifacts/browser
+      - name: Preserve synthetic browser screenshots and server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: founder-browser-evidence
+          path: test-artifacts/browser
+          retention-days: 7
 
   container:
     runs-on: ubuntu-latest
@@ -102,6 +109,20 @@ jobs:
           docker exec scene-smoke python -c "import psycopg; print('PostgreSQL driver present')"
           for attempt in {1..30}; do
             if docker exec scene-smoke python -c "import json,urllib.request; result=json.load(urllib.request.urlopen('http://127.0.0.1:8000/healthz')); assert result == {'ok':True,'mode':'pilot'}; assert urllib.request.urlopen('http://127.0.0.1:8000/static/app.js').status == 200"; then
+              docker exec -i scene-smoke python - < tests/container_smoke.py
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs scene-smoke
+          exit 1
+      - name: Verify account and request persistence after container restart
+        shell: bash
+        run: |
+          docker restart scene-smoke
+          for attempt in {1..30}; do
+            if docker exec scene-smoke python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"; then
+              docker exec -i scene-smoke python - verify < tests/container_smoke.py
               exit 0
             fi
             sleep 1

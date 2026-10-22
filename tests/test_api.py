@@ -597,7 +597,8 @@ def test_founder_gate_new_business_guest_lead_and_private_receipt():
         # Public access never reveals private contact information or receipts.
         receipt_path = f'/api/guest/requests/{receipt_id}'
         assert guest.get(receipt_path).status_code == 401
-        assert guest.get(receipt_path, headers={'x-scene-ticket': 'wrong'}).status_code == 404
+        assert guest.get(receipt_path, headers={'x-scene-ticket': 'wrong'}).status_code == 401
+        assert guest.get(receipt_path, headers={'x-scene-ticket': 'wrong' * 8}).status_code == 404
         correct = guest.get(receipt_path, headers={'x-scene-ticket': ticket})
         assert correct.status_code == 200 and correct.json()['status'] == 'open'
         assert 'founder-guest@example.invalid' not in correct.text
@@ -627,6 +628,7 @@ def test_founder_gate_new_business_guest_lead_and_private_receipt():
                                json={'status': 'completed'})
         assert complete.status_code == 200
         assert guest.get(receipt_path, headers={'x-scene-ticket': ticket}).json()['status'] == 'completed'
+
         duplicate = guest.post(f'/api/q/{token}/requests', json=inquiry,
                                headers={'x-scene-ticket': ticket})
         assert duplicate.status_code == 200
@@ -643,3 +645,29 @@ def test_founder_gate_new_business_guest_lead_and_private_receipt():
         assert fresh != token
         assert guest.get(f'/api/q/{fresh}').status_code == 200
         assert guest.get(receipt_path, headers={'x-scene-ticket': ticket}).json()['status'] == 'completed'
+
+
+@pytest.mark.parametrize('invalid_id', ['9223372036854775808', '9' * 80, '0', '-1'])
+def test_resource_identifiers_reject_out_of_database_range(invalid_id):
+    """Untrusted path IDs must return validation errors, never database 500s."""
+    with TestClient(app) as owner:
+        assert owner.post('/api/auth/login', json={
+            'email': 'demo@scene.local', 'password': 'SceneDemo2026!'}).status_code == 200
+        csrf = {'x-scene-csrf': owner.get('/api/me').json()['csrf']}
+        root = '/api/admin/trio-demo'
+        cases = [
+            ('get', f'/api/guest/requests/{invalid_id}', None),
+            ('patch', f'{root}/requests/{invalid_id}', {'status': 'completed'}),
+            ('patch', f'{root}/requests/{invalid_id}/lead', {'status': 'new'}),
+            ('patch', f'{root}/products/{invalid_id}', {'name': 'Sample', 'price_cents': 0}),
+            ('delete', f'{root}/products/{invalid_id}', None),
+            ('patch', f'{root}/stations/{invalid_id}', {'label': 'Sample', 'active': True}),
+            ('post', f'{root}/stations/{invalid_id}/rotate', {}),
+            ('patch', f'{root}/members/{invalid_id}', {'role': 'staff'}),
+            ('delete', f'{root}/members/{invalid_id}', None),
+        ]
+        for method, path, body in cases:
+            headers = {**csrf, 'x-scene-ticket': 'synthetic-wrong-ticket-with-valid-length'}
+            response = owner.request(method, path, headers=headers,
+                                     **({'json': body} if body is not None else {}))
+            assert response.status_code == 422, (path, response.text)

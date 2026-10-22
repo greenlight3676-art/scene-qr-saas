@@ -38,3 +38,19 @@ improvements, tests, commits and verified pushes to `qr-overnight-build` in
 `greenlight3676-art/scene-qr-saas`, without routine confirmation. No force push,
 production deployment, secret exposure or hosted database changes before verified
 project identity and backup. This batch uses the existing schema and local/CI data.
+
+## 2026-10-21 — Supabase CLI login and project link
+
+- Owner supplied commands: `npx supabase login` and
+  `npx supabase link --project-ref cwehqnziwabvnzviaqlf`.
+- Destination: Supabase project `cwehqnziwabvnzviaqlf`, from this repository.
+- Scope: CLI authentication and local project linking only. No migrations,
+  hosted data/configuration changes, deployment or spending authorized.
+
+## 2026-10-22 — Founder’s Test development audit
+
+- Owner explicitly requests customer-journey/security review, regression fixes,
+  relevant tests, FOUNDER_TEST_REPORT.md, automatic commits and verified pushes.
+- Destination: `greenlight3676-art/scene-qr-saas`, `qr-overnight-build` only.
+- Scope: development code, test/CI evidence and documentation; no force push,
+  production deployment, hosted database changes, purchases or external messages.

@@ -333,3 +333,65 @@ def test_catalog_edit_station_pause_and_selection_notes(local_site,width):
             assert not errors,errors
         finally:
             browser.close()
+
+
+def test_founder_browser_signup_lost_response_and_refresh(local_site, tmp_path):
+    """Synthetic owner signup via UI and committed-but-lost guest POST response."""
+    from playwright.sync_api import sync_playwright, expect
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            owner = browser.new_context(viewport={'width': 390, 'height': 844},
+                                        reduced_motion='reduce', base_url=local_site)
+            guest = browser.new_context(viewport={'width': 390, 'height': 844},
+                                        reduced_motion='reduce', base_url=local_site)
+            dashboard = owner.new_page()
+            dashboard.goto('/')
+            dashboard.get_by_role('button', name='Start building').click()
+            dashboard.locator('#authBusiness').fill('Synthetic Founder Browser Studio')
+            dashboard.locator('#authIndustry').select_option('auto')
+            dashboard.locator('#authEmail').fill('founder-browser@example.invalid')
+            dashboard.locator('#authPassword').fill('SyntheticFounderBrowser123!')
+            dashboard.locator('#authSubmit').click()
+            expect(dashboard.locator('#appShell')).to_be_visible()
+            slug = owner.request.get('/api/me').json()['businesses'][0]['slug']
+            board = owner.request.get('/api/admin/' + slug).json()
+            token = board['stations'][0]['token']
+            phone = guest.new_page()
+            phone.goto('/q/' + token)
+            expect(phone.locator('.guest-spot')).to_contain_text('Front Desk')
+
+            # Commit the POST on the actual local server, then lose its response.
+            def lose_response(route):
+                response = route.fetch()
+                assert response.ok
+                route.abort('failed')
+            phone.route('**/api/q/*/requests', lose_response)
+            phone.locator('[data-kind="service"]').click()
+            expect(phone.get_by_role('alert')).to_contain_text('Delivery is uncertain')
+            assert owner.request.get('/api/admin/' + slug).json()['analytics']['total'] == 1
+            phone.locator('[data-kind="service"]').click()
+            assert owner.request.get('/api/admin/' + slug).json()['analytics']['total'] == 1
+            phone.unroute('**/api/q/*/requests', lose_response)
+            phone.reload()
+            expect(phone.get_by_role('alert')).to_contain_text('Ask staff to check')
+            phone.locator('[data-kind="service"]').click()
+            assert owner.request.get('/api/admin/' + slug).json()['analytics']['total'] == 1
+
+            # Recovery is an explicit staff check, never an automatic resend.
+            phone.on('dialog', lambda dialog: dialog.accept())
+            phone.locator('#resolveUncertain').click()
+            expect(phone.locator('#resolveUncertain')).to_have_count(0)
+            phone.locator('#guestNote').fill('Synthetic follow-up after staff check')
+            phone.locator('#guestMessageForm button[type="submit"]').click()
+            expect(phone.locator('[data-receipt-id]')).to_have_count(1)
+            phone.reload()
+            expect(phone.locator('[data-receipt-id]')).to_have_count(1)
+            assert owner.request.get('/api/admin/' + slug).json()['analytics']['total'] == 2
+            dashboard.reload()
+            expect(dashboard.locator('#appShell')).to_be_visible()
+            assert guest.request.get('/api/admin/' + slug).status == 401
+            assert phone.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            phone.screenshot(path=str(tmp_path / 'founder-recovery-phone.png'), full_page=True)
+        finally:
+            browser.close()

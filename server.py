@@ -18,11 +18,11 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote, urlsplit
 
 import qrcode
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Path as ApiPath
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -40,6 +40,7 @@ ALLOWED_KINDS = {
     'auto': {'estimate', 'dropoff', 'service', 'question'},
     'retail': {'assistance', 'size', 'checkout', 'question', 'order'},
 }
+ResourceID = Annotated[int, ApiPath(gt=0, le=9223372036854775807)]
 ROLES = {'owner', 'manager', 'staff'}
 EDIT_ROLES = {'owner', 'manager'}
 DB_LOCK = threading.RLock()
@@ -369,7 +370,7 @@ async def guest_request(token: str, body: NewRequest, request: Request):
         return {'ok':True,'request_id':rid,'ticket':receipt,'status':'open','note':'Staff received your service request. This is not a paid order or confirmed booking.'}
 
 @app.get('/api/guest/requests/{rid}')
-async def guest_status(rid:int,request:Request):
+async def guest_status(rid:ResourceID,request:Request):
     ticket=request.headers.get('x-scene-ticket','')
     if len(ticket)<25: fail(401,'Request receipt required')
     with db() as c:
@@ -451,7 +452,7 @@ async def request_history(slug:str,request:Request,
 
 
 @app.patch('/api/admin/{slug}/requests/{rid}/lead')
-async def update_lead(slug:str,rid:int,body:LeadStatus,request:Request):
+async def update_lead(slug:str,rid:ResourceID,body:LeadStatus,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
@@ -462,7 +463,7 @@ async def update_lead(slug:str,rid:int,body:LeadStatus,request:Request):
     return {'ok':True}
 
 @app.patch('/api/admin/{slug}/requests/{rid}')
-async def update_request(slug:str,rid:int,body:ChangeStatus,request:Request):
+async def update_request(slug:str,rid:ResourceID,body:ChangeStatus,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'])
@@ -483,7 +484,7 @@ async def add_product(slug:str,body:Product,request:Request):
         return {'ok':True,'id':rid}
 
 @app.patch('/api/admin/{slug}/products/{pid}')
-async def edit_product(slug:str,pid:int,body:Product,request:Request):
+async def edit_product(slug:str,pid:ResourceID,body:Product,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
@@ -493,7 +494,7 @@ async def edit_product(slug:str,pid:int,body:Product,request:Request):
     return {'ok':True}
 
 @app.delete('/api/admin/{slug}/products/{pid}')
-async def remove_product(slug:str,pid:int,request:Request):
+async def remove_product(slug:str,pid:ResourceID,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
@@ -512,7 +513,7 @@ async def create_station(slug:str,body:Spot,request:Request):
         return {'ok':True,'id':rid}
 
 @app.patch('/api/admin/{slug}/stations/{spot_id}')
-async def edit_station(slug:str,spot_id:int,body:StationSettings,request:Request):
+async def edit_station(slug:str,spot_id:ResourceID,body:StationSettings,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
@@ -522,7 +523,7 @@ async def edit_station(slug:str,spot_id:int,body:StationSettings,request:Request
     return {'ok':True}
 
 @app.post('/api/admin/{slug}/stations/{spot_id}/rotate')
-async def rotate_station(slug:str,spot_id:int,request:Request):
+async def rotate_station(slug:str,spot_id:ResourceID,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
@@ -575,7 +576,7 @@ async def revoke_invite(slug:str,invite_id:str,request:Request):
         return {'ok':True}
 
 @app.patch('/api/admin/{slug}/members/{uid}')
-async def change_member(slug:str,uid:int,body:MemberRole,request:Request):
+async def change_member(slug:str,uid:ResourceID,body:MemberRole,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
@@ -586,7 +587,7 @@ async def change_member(slug:str,uid:int,body:MemberRole,request:Request):
         return {'ok':True}
 
 @app.delete('/api/admin/{slug}/members/{uid}')
-async def revoke_member(slug:str,uid:int,request:Request):
+async def revoke_member(slug:str,uid:ResourceID,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})

@@ -233,3 +233,14 @@ unpaid per-item requests, not inventory reservations or grouped confirmed orders
 Analytics includes full-history inquiry stage counts and catalog request/unit counts,
 quote-required requests and historical records with unknown quantities. Counts
 include open/completed requests and do not establish sales, revenue or conversion.
+
+### Founder’s Test (2026-10-22)
+
+See [FOUNDER_TEST_REPORT.md](FOUNDER_TEST_REPORT.md) for the requirement-by-requirement
+launch decision and test evidence. Commercial launch remains blocked.
+If a guest submission loses its response, the tab now pauses further submissions
+until staff checks whether it arrived. The marker survives refresh when session
+storage is available; acknowledging the staff check never automatically resends.
+Do not resend items staff already received. This is not an offline queue or an
+exactly-once delivery guarantee. Private receipt history still requires the
+successful original response and remains limited to the current browser tab.

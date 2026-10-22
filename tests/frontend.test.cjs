@@ -19,7 +19,7 @@ function guestApp(industry, fetch, nodes={}) {
   });
   vm.runInContext(source.slice(0, start) + `
     renderGuest=()=>{};toast=()=>{};beginGuestStatusPolling=()=>{};
-    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations};
+    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations,loadBusiness};
   })();`, context);
   const app = context.guestTest;
   app.storage=storage;app.context=context;
@@ -244,4 +244,58 @@ test('catalog edit and paused station forms escape user content',()=>{
   assert.match(stations,/QR location paused/);
   assert.ok(!stations.includes('class="qr-image"'));
   assert.ok(!stations.includes('data-station-preview='));
+});
+
+
+test('lost submission response blocks duplicates and keeps a tab recovery marker',async()=>{
+  let calls=0;
+  const app=guestApp('auto',async()=>{calls++;throw new Error('Synthetic connection interrupted')});
+  app.state.cart=[{id:1,qty:1}];
+  await app.sendCart();
+  await app.sendCart();
+  await app.sendGuestRequest('service','Help');
+  assert.equal(calls,1);
+  assert.equal(app.state.uncertain,true);
+  assert.equal(app.storage.get('scene-uncertain:sample-qr'),'yes');
+  assert.equal(app.state.cart.length,1);
+  assert.match(app.state.feedback,/staff/i);
+});
+
+test('server error or unreadable response never pretends a request succeeded',async()=>{
+  for(const response of [
+    {ok:false,status:503,json:async()=>({detail:'Synthetic unavailable'})},
+    {ok:true,status:200,json:async()=>{throw new Error('truncated')}},
+    {ok:true,status:200,json:async()=>({})},
+  ]){
+    let calls=0;
+    const app=guestApp('auto',async()=>{calls++;return response});
+    await app.sendGuestRequest('service','Help');
+    await app.sendGuestRequest('service','Help');
+    assert.equal(calls,1);
+    assert.equal(app.state.receipts.length,0);
+    assert.equal(app.state.uncertain,true);
+  }
+});
+
+test('confirmed validation rejection permits correction without delivery lock',async()=>{
+  let calls=0;
+  const app=guestApp('auto',async()=>{calls++;return {ok:false,status:400,json:async()=>({detail:'Correct this input'})}});
+  await app.sendGuestRequest('question','Synthetic inquiry');
+  await app.sendGuestRequest('question','Corrected inquiry');
+  assert.equal(calls,2);
+  assert.equal(app.state.uncertain,false);
+});
+
+test('revoked access immediately clears cached private workspace data',async()=>{
+  const content={textContent:''};
+  const app=guestApp('auto',async()=>({ok:false,status:404,json:async()=>({detail:'Business not found'})}),{workContent:content});
+  app.state.me={csrf:'synthetic-csrf'};
+  app.state.slug='sample';app.state.business={slug:'sample',requests:[{customer_contact:'private@example.invalid'}]};
+  app.state.requestPage={requests:[{customer_contact:'private@example.invalid'}]};
+  app.state.inviteUrl='synthetic-private-invite';
+  await assert.rejects(app.loadBusiness('sample'),/Business not found/);
+  assert.equal(app.state.business,null);
+  assert.equal(app.state.requestPage,null);
+  assert.equal(app.state.inviteUrl,'');
+  assert.match(content.textContent,/access|sign in/i);
 });
