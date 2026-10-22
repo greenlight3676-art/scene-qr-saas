@@ -19,7 +19,7 @@ function guestApp(industry, fetch, nodes={}) {
   });
   vm.runInContext(source.slice(0, start) + `
     renderGuest=()=>{};toast=()=>{};beginGuestStatusPolling=()=>{};
-    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests};
+    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests};
   })();`, context);
   const app = context.guestTest;
   app.storage=storage;
@@ -188,4 +188,15 @@ test('lead stage filter is sent with request search',async()=>{
   const params=new URLSearchParams(requested.split('?')[1]);
   assert.equal(params.get('lead_status'),'qualified');
   assert.equal(params.get('search'),'Sample Guest');
+});
+
+
+test('request filter drafts survive a workspace rerender before Apply',()=>{
+  const app=guestApp('auto',async()=>{});
+  Object.assign(app.state,{business:{industry:'auto',stations:[],role:'owner'},requestLead:'',requestDraft:{search:'Draft & name',kind:'question',lead:'qualified',station:''}});
+  const html=app.renderRequests();
+  assert.match(html,/value="qualified" selected/);
+  assert.match(html,/value="question" selected/);
+  assert.match(html,/value="Draft &amp; name"/);
+  assert.equal(app.state.requestLead,'');
 });

@@ -127,3 +127,22 @@ mapping to Scene QR can be established. No hosted query, restore or migration wa
 performed. A verified project reference and backup/restore evidence remain blockers.
 Do not treat an unidentified hosted backup or a local SQLite backup as a verified
 backup of the intended Supabase project.
+
+### First development-branch CI and correction
+
+Published source `2a954f4e2d8a56b728149c71639161372b2203c3` with an exact local/remote
+Git tree match (`00db9981cd0950717f3d2e715b0f209c4bf887ba`).
+Run: https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39716016810
+
+- Application/JavaScript job: passed.
+- PostgreSQL: all 8 database tests and all 24 restricted-role API tests passed.
+- Container build/non-demo startup: passed.
+- Chromium: 5 passed, 2 failed. Both phone widths exposed a filter-draft race when
+  a pending lead-stage save refreshed Request center before Apply was clicked.
+
+Correction preserves unapplied search/type/stage/station selections across workspace
+renders, separately from applied query state. Business change and explicit Reset
+clear drafts. A new frontend regression confirms draft filters survive a re-render;
+all 16 frontend tests and JavaScript syntax checks pass locally. The existing
+phone tests retain the rapid stage-update/filter sequence to verify the actual fix.
+No Python or database implementation changed in this correction.

@@ -85,3 +85,10 @@ See `PHASE_1_2_REPORT.md` for commands, boundaries and unverified gates.
   await GitHub CI; no local tooling was installed.
 - [x] Check home Codex/MCP/Supabase config locations without exposing values:
   no project-specific Scene QR Supabase identity exists in inspected config.
+
+- [x] Publish source `2a954f4` to development branch and verify exact tree match.
+- [x] Verify initial CI: application, PostgreSQL (8 database + 24 API cases),
+  and container jobs passed. Browser job found 2 filter-draft races; 5 cases passed.
+- [x] Preserve unapplied request filters during lead-save refreshes; 16 frontend
+  tests and syntax/whitespace checks passed locally.
+- [ ] Publish and verify browser-race correction across all four CI jobs.
