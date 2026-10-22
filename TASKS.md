@@ -55,7 +55,8 @@
 - [x] Prepare explicit backend-role database hardening with RLS on every app table,
   denied browser-role access, tenant-scoped request writes and receipt-only reads.
   Wire hardened configuration into disposable PostgreSQL CI fixtures.
-- [ ] Run PostgreSQL RLS/import/API checks; unavailable locally (no disposable server).
+- [x] Run PostgreSQL RLS/import/API checks in GitHub CI: 8 database and 24 API
+  cases passed on source 4c18454 (no local disposable server).
 - [ ] Owner identifies Scene QR Supabase project; inspect its recovery/security state,
   prepare a scoped restore/migration preview and obtain required hosted-action approval.
 - [x] Add structured inquiry name/contact/consent timestamps, private contact search,
@@ -63,7 +64,8 @@
 - [x] Verify API/privacy/authorization and additive SQLite schema preservation:
   29 Python checks passed using the documented sandbox timer workaround;
   14 frontend checks passed; JavaScript syntax and Python compilation passed.
-- [ ] Browser layout/keyboard verification and production backup/restore drill.
+- [x] Verify 7 phone/tablet Chromium workflows in CI, including lead-stage filters.
+- [ ] Complete manual keyboard/accessibility review and production backup/restore drill.
 
 See `PHASE_1_2_REPORT.md` for commands, boundaries and unverified gates.
 
@@ -76,7 +78,7 @@ See `PHASE_1_2_REPORT.md` for commands, boundaries and unverified gates.
   checks skipped locally. Standard TestClient still requires sandbox timer workaround.
 - [x] Fix inherited database-role/ownership bypass checks; add PostgreSQL regressions.
 - [x] Continue lead workflow with full-history lead-stage filters and regressions.
-- [ ] Publish reviewed code and verify remote tree and GitHub Actions.
+- [x] Publish reviewed code and verify remote tree and all four GitHub Actions jobs.
 - [ ] Identify Scene QR Supabase from configuration and verify a backup before any
   hosted migration. No matching reference found in either app copy or environment.
 
@@ -91,4 +93,9 @@ See `PHASE_1_2_REPORT.md` for commands, boundaries and unverified gates.
   and container jobs passed. Browser job found 2 filter-draft races; 5 cases passed.
 - [x] Preserve unapplied request filters during lead-save refreshes; 16 frontend
   tests and syntax/whitespace checks passed locally.
-- [ ] Publish and verify browser-race correction across all four CI jobs.
+- [x] Publish and verify browser-race correction across all four CI jobs.
+
+Final verified source: `4c1845455d4dcf15972d09933598f3fe1101aca1`.
+CI: https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39716306446
+All four jobs passed. Follow-up publication updates documentation only. Supabase
+project identity and backup evidence remain unverified; no hosted migration ran.

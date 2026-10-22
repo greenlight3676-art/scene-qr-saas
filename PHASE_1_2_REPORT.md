@@ -146,3 +146,32 @@ clear drafts. A new frontend regression confirms draft filters survive a re-rend
 all 16 frontend tests and JavaScript syntax checks pass locally. The existing
 phone tests retain the rapid stage-update/filter sequence to verify the actual fix.
 No Python or database implementation changed in this correction.
+
+### Final verification
+
+Verified application source: `4c1845455d4dcf15972d09933598f3fe1101aca1`.
+Exact local/remote tree: `5380c1a196a8ea5af16252b0173f659faff19865`.
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39716306446
+
+All four GitHub CI jobs passed:
+- Application: 30 Python checks passed (15 skipped because database/browser
+  checks run separately), JavaScript syntax and all 16 frontend checks passed.
+- PostgreSQL: 8 migration/security/import checks passed; all 24 API checks passed
+  with RLS enabled and a restricted runtime role.
+- Chromium: all 7 phone/tablet workflows passed, including the rapid lead-save/
+  filter sequence, filter reset, structured inquiry privacy and responsive widths.
+- Container: production image build, non-demo startup and static asset smoke passed.
+
+The ordinary TestClient suite runs without the sandbox timer workaround in CI.
+Local imports reconstructed the exact published Git commits and verified tree
+identity before advancing the local development branch. Publication used guarded
+fast-forward updates. Main was rechecked and remains at original `a77c9bd`.
+The final follow-up commit changes progress/current-capability documentation only;
+no application or CI configuration differs from the verified source above.
+
+Remaining blockers: the inspected configuration does not identify any connected
+Supabase project as Scene QR, and no verified backup of that intended database is
+available. Hosted migrations/restores remain gated. Production authentication/
+recovery, broader tenant RLS, push realtime, durable rate limits, retention/auditing,
+payments and hosting are still open commercial-rollout work. Public API requests
+remain unpaid staff requests; lead stages do not establish purchases or revenue.

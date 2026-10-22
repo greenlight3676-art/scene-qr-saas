@@ -41,9 +41,10 @@ it is not a production rollback procedure. Test uses transaction rollback.
 The server retains membership/role checks and tenant-scoped queries. Composite
 foreign keys enforce matching tenants for station/product request references and
 scans. The runtime role must be restricted separately as above. PostgreSQL RLS is
-NOT implemented: the shared server still has table-wide access. RLS with verified
-transaction-local identity and narrowly scoped public QR access remains required
-before commercial rollout. Global transaction advisory locking deliberately
+implemented as backend-only policies with transaction-local tenant scope on requests
+and SELECT-only receipt capabilities. Other tables still have backend-wide policies
+and server-side tenant checks. Broader tenant RLS and live security/restore checks
+remain required before commercial rollout. Global transaction advisory locking deliberately
 preserves SQLite queue/idempotency/invite serialization across connections; it
 limits throughput and is not Task 3 realtime or distributed scaling.
 
@@ -71,4 +72,5 @@ context and SELECT-only receipt lookup. Existing unknown policies cause rollback
 Other tables remain tenant-checked by the server, with backend-wide DB policies.
 PostgreSQL startup fails until RLS and version 2 are present. Do not apply this to
 an unidentified Supabase project. Verify the disposable PostgreSQL suite and API
-parity before a hosted migration. This session did not run those database checks.
+parity before a hosted migration. All 8 database and 24 PostgreSQL API checks passed
+on source 4c18454 in GitHub CI; no hosted migration or restore drill was performed.

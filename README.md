@@ -101,7 +101,7 @@ schema and read-only, empty-target SQLite importer are available; see
 [POSTGRES_MIGRATION.md](POSTGRES_MIGRATION.md) for environment configuration,
 least-privilege grants, backup/import and rollback limits. Install
 `requirements-postgres.txt` before opting in with `SCENE_DATABASE_URL`.
-Do not cut over production data yet: RLS remains an open gate. Disposable
+Do not cut over production data yet: live security/restore verification remains open. Disposable
 PostgreSQL migration and full API parity tests now run in CI. Mobile queue controls now wrap on small screens with larger
 touch targets, retaining the existing visual design.
 
@@ -207,3 +207,8 @@ no connected hosted merchant project has been modified.
 Request center also filters inquiries by **Lead stage** across the complete
 history. Unreviewed legacy inquiries retain unknown stages. Database-role checks
 reject inherited privileges/ownership as well as direct privileges.
+
+Verified development source `4c18454` passed all four GitHub CI jobs: application,
+PostgreSQL/RLS/API parity, seven phone/tablet Chromium workflows, and container
+build/startup. Results and remaining hosted-project/backup gates are recorded in
+[PHASE_1_2_REPORT.md](PHASE_1_2_REPORT.md#final-verification).
