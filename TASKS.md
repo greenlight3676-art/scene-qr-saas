@@ -106,8 +106,8 @@ project identity and backup evidence remain unverified; no hosted migration ran.
 - [x] Add station rename/pause/resume without rotating printed QR tokens; preserve receipts.
 - [x] Add full-history inquiry-stage and catalog-request quantity analytics.
 - [x] Add optional selection notes, accessible controls and reduced-motion scrolling.
-- [ ] Run local and GitHub API/PostgreSQL/browser/container checks; fix failures.
-- [ ] Publish verified changes and progress to `qr-overnight-build` only.
+- [x] Run local and GitHub API/PostgreSQL/browser/container checks; fix failures.
+- [x] Publish verified changes and progress to `qr-overnight-build` only.
 - [x] Recheck safe Supabase configuration; no matching reference exists. Hosted work
   remains blocked without verified identity/backup.
 
@@ -118,3 +118,10 @@ whitespace checks passed. GitHub CI remains pending for this source revision.
 Operations source `1f41e1d`: application/PostgreSQL/container CI passed. Both new
 browser cases exposed an ambiguous test selector for two default stations; scoped
 to the target station ID and queued for complete re-verification (7 existing cases passed).
+
+Operations batch verified on `d1c8386edb756682985534a1aacf134898c9633f`.
+All four CI jobs passed: 33 application checks, 20 frontend checks, 8 database
+checks, 27 PostgreSQL API checks, 9 Chromium workflows, and container build/startup.
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39717836606
+No hosted database or production deployment changed. Remaining commercial gates
+are tracked above; Supabase identity/backup are still unverified.

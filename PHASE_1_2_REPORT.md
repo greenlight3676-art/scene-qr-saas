@@ -225,3 +225,33 @@ workflows; both new cases stopped at an ambiguous test locator because signup
 creates two default stations. Scope the form and QR visibility assertions to the
 station ID under test; application code is unchanged by this correction. Repeat
 all CI jobs to verify the complete workflow rather than skipping the failing cases.
+
+### Operations batch final verification
+
+Verified source: `d1c8386edb756682985534a1aacf134898c9633f`.
+Exact local/remote Git tree: `5a301daf57eaf08cb5ee9089df7c5acdd8018579`.
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39717836606
+
+All four jobs passed:
+- Application: 33 Python checks passed; 17 skipped because PostgreSQL/browser
+  suites run in their own jobs. JavaScript syntax and 20 frontend checks passed.
+- PostgreSQL: 8 database/security/import checks and all 27 API checks passed
+  against the restricted runtime role with RLS enabled. No migration was needed.
+- Chromium: all 9 phone/tablet workflows passed, including the corrected station
+  selector, editing/cancel keyboard focus, selection note preservation/privacy,
+  station rename/pause/resume, catalog snapshots, analytics and overflow checks.
+- Container: production build, non-demo startup and static asset smoke passed.
+
+Application code is unchanged by the final documentation-only publication. The
+local development branch is synchronized using exact published commit/tree hashes;
+main is not updated. The completed batch adds operational controls, not payments,
+grouped confirmed orders, inventory reservation or a production launch.
+
+Blocked next hosted phase: safe existing configuration still does not identify the
+Scene QR Supabase project, and no backup of a verified destination is established.
+Production Supabase authentication/recovery and hosted security/restore validation
+remain gated. Payments, production hosting and external delivery also require their
+specific accounts/configuration/authorization. Push realtime, durable abuse control,
+audit/retention and broader tenant RLS remain separate documented engineering work;
+this batch does not claim commercial SaaS readiness. No tools were installed locally,
+no production deployment or external messages were sent, and no force push occurred.
