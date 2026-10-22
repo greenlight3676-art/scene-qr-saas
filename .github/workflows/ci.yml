@@ -84,7 +84,9 @@ jobs:
       - name: Mobile guest, inquiry, receipt and staff-access workflows
         env:
           SCENE_BROWSER_TESTS: '1'
-        run: python -m pytest -q tests/test_mobile.py --basetemp=test-artifacts/browser
+        run: |
+          mkdir -p test-artifacts
+          python -m pytest -q tests/test_mobile.py --basetemp=test-artifacts/browser
       - name: Preserve synthetic browser screenshots and server logs
         if: always()
         uses: actions/upload-artifact@v4

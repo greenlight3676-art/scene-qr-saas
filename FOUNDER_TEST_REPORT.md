@@ -85,7 +85,11 @@ The corrected test checks both without weakening authentication.
 
 ## CI and publication evidence
 
-Pending publication of this audit. Required jobs: application + JS, disposable
+Source `174490ac` published to `qr-overnight-build`. Run
+[39722924877](https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39722924877)
+passed application, PostgreSQL and expanded container checks. Browser setup failed
+before executing tests because the new artifact parent directory did not exist.
+Added explicit parent-directory creation; full re-verification pending. Required jobs: application + JS, disposable
 PostgreSQL migration/RLS/API + explicit Founder gate, Chromium workflows, Docker
 build/non-demo guest workflow + restart persistence. Browser artifacts contain
 synthetic test data only and expire after seven days. Record exact source commit,
