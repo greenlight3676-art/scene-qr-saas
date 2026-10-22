@@ -24,21 +24,22 @@ The corrected test checks both without weakening authentication.
 | Requirement | Result | Evidence and boundary |
 | --- | --- | --- |
 | Business signup, login/logout, session expiry, CSRF and origin checks | PASS | `test_signup_login_logout_and_validation`, `test_private_cache_session_expiry_and_membership_revocation`, origin tests; local SQLite. Managed auth is a separate failing gate below. |
-| Owner dashboard, branding and catalog management | PASS | API settings, catalog-edit, snapshot and role regressions; server persistence rather than visual-only forms. Browser verification pending CI. |
+| Owner dashboard, branding and catalog management | PASS | API settings, catalog-edit, snapshot and role regressions; server persistence rather than visual-only forms. Chromium workflows also passed in CI. |
 | Create, rename, pause/resume and rotate QR locations; generate PNG | PASS | Station and Founder API tests check live tokens, PNG signature, unavailable/rotated tokens and surviving private receipts. PNG decoding/printed signs on physical phones remains blocked. |
+| Chromium mobile/tablet customer and owner workflows | PASS | All ten browser cases passed at covered 320/390/768px widths, including UI signup, quantities/inquiries, role controls, receipts, keyboard steps, pause/resume, layout overflow and interrupted delivery. This is browser automation, not a physical phone test. |
 | Real mobile customer scan over cellular/HTTPS | BLOCKED | No public staging URL, printed sign or physical phones in this environment. Chromium viewport checks do not establish this requirement. |
 | Browse services, quantities, notes and submit inquiries/requests | PASS | Four-industry JS tests and catalog/quantity/consent API checks. These are unpaid requests requiring staff confirmation. |
 | Lead arrives only in the correct business queue | PASS | Founder lifecycle and structured-inquiry tests check contact search, lead qualification, other-business denial and public response privacy. |
 | Staff/manager/owner permissions and status updates | PASS | Invitation, one-use/revoked invite, member role/revocation and forward-only transition regressions. No email invitation delivery or audit log is implemented. |
 | Accurate operational analytics and input validation | PASS | Full-history, UTC daily, station, quantity/snapshot and lead-stage tests. New resource-ID validation checks all nine numeric route variants against zero, negative and overflowing IDs. Counts are page loads/requests, never revenue or unique customers. |
-| Interrupted submissions and refresh safety | PASS | JS regression reproduces lost-response duplicate risk and verifies a per-QR delivery lock; malformed/5xx responses cannot claim success; confirmed validation errors permit correction. Lock persists in session storage when available. Browser committed-but-lost-response/refresh check awaits CI. Manual staff reconciliation is still required; no exactly-once/offline guarantee. |
-| Persistence across database backup/restore and process restart | BLOCKED | Local synthetic SQLite backup/restore and WAL tests pass. New Docker account/request/restart check awaits CI. Hosted restore/recovery and volume replacement remain untested. |
+| Interrupted submissions and refresh safety | PASS | JS regression reproduces lost-response duplicate risk and verifies a per-QR delivery lock; malformed/5xx responses cannot claim success; confirmed validation errors permit correction. Lock persists in session storage when available. Chromium committed-but-lost-response/refresh check also passed in CI. Manual staff reconciliation is still required; no exactly-once/offline guarantee. |
+| Synthetic persistence across database backup/restore and process restart | PASS | Local SQLite backup/restore and WAL tests pass; Docker account/request/restart check passed in CI. Hosted restore/recovery and volume replacement remain separately blocked. |
 | Cross-business authorization and customer privacy | PASS | API negative tenant/resource/role tests and private receipt checks; new JS regression clears cached contacts/invites when workspace access is denied. This is application-level evidence, not proof of full database tenant isolation. |
 | WCAG 2.2 AA and full mobile/keyboard accessibility | BLOCKED | Existing focus/reduced-motion rules and browser keyboard/layout checks reviewed. No full screen-reader/contrast audit, physical device review or formal conformance test completed. |
 | Production latency, concurrency and abuse resistance | FAIL | No production load test; synchronous DB/password work runs inside async handlers, PostgreSQL uses a global transaction lock, and rate limits are process-memory only. Do not infer capacity from test duration. |
 | Verified email, password recovery, managed Supabase Auth and audit history | FAIL | Not implemented; current authentication is local application sessions/passwords. |
 | Commercial subscriptions, payments and POS/order fulfillment | FAIL | No Stripe/webhooks/entitlements or authorized POS integration. No real payment/booking/order claim permitted. |
-| Hosted Supabase migration, restricted roles and complete tenant RLS | BLOCKED | SUPABASE_CONNECTION.md records project identity `cwehqnziwabvnzviaqlf`; linking/migration/auth are separate. Disposable database tests await CI. Only requests have tenant/receipt DB predicates; other backend policies are broad, so full tenant RLS is unfinished. No hosted writes performed. |
+| Hosted Supabase migration, restricted roles and complete tenant RLS | BLOCKED | SUPABASE_CONNECTION.md records project identity `cwehqnziwabvnzviaqlf`; linking/migration/auth are separate. Eight disposable database checks and 32 restricted-role API checks passed in CI. Only requests have tenant/receipt DB predicates; other backend policies are broad, so full tenant RLS is unfinished. No hosted writes performed. |
 | Production hosting, HTTPS, backup schedule, monitoring and privacy operations | BLOCKED | No production deployment or live restore drill tested. Retention/export/deletion, operational alerts and venue acceptance remain launch gates. |
 
 ## Confirmed defects fixed
@@ -85,15 +86,34 @@ The corrected test checks both without weakening authentication.
 
 ## CI and publication evidence
 
-Source `174490ac` published to `qr-overnight-build`. Run
-[39722924877](https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39722924877)
-passed application, PostgreSQL and expanded container checks. Browser setup failed
-before executing tests because the new artifact parent directory did not exist.
-Added explicit parent-directory creation; full re-verification pending. Required jobs: application + JS, disposable
-PostgreSQL migration/RLS/API + explicit Founder gate, Chromium workflows, Docker
-build/non-demo guest workflow + restart persistence. Browser artifacts contain
-synthetic test data only and expire after seven days. Record exact source commit,
-run URL and actual job conclusions here after checking GitHub.
+Verified source: **`1266d13912ba1a373eafca35849849ff164fa499`** on
+`qr-overnight-build`. All four jobs passed in
+[run 39723075114](https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39723075114):
+
+| CI job | Result | Actual evidence |
+| --- | --- | --- |
+| Application | PASS | 38 Python passed / 18 intentionally skipped, explicit Founder lifecycle passed; 24 JS tests and syntax check passed. |
+| PostgreSQL | PASS | Eight migration/import/RLS/role checks, 32 restricted-role API checks, explicit Founder lifecycle passed. Disposable PostgreSQL 16; not hosted Supabase. |
+| Browser | PASS | Ten real Chromium cases passed in 40.27 seconds against an isolated local CI server; includes the new lost-response/refresh scenario. |
+| Container | PASS | Production image built with Psycopg; non-demo health/static checks; synthetic signup/request/status workflow and login/data persistence after restarting the same container. Not a replacement-container/volume restore test. |
+
+[Synthetic browser screenshots and logs](https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39723075114/artifacts/12401484150)
+were uploaded by CI, with seven-day retention. Automated layout assertions passed;
+this audit does not claim a full visual, contrast or screen-reader review.
+
+Initial audit source `174490ac` passed application, PostgreSQL and container jobs
+in [run 39722924877](https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39722924877),
+but all browser cases hit setup errors: the new artifact parent directory was
+missing. Added explicit parent creation, checked the pytest temporary-directory
+setup locally with two backup tests, then verified the complete corrected run
+above. No checks were disabled to obtain a green result.
+
+Publication used the connected GitHub Git-object API because shell Git could not
+resolve github.com. Verified the uploaded tree against `git write-tree`, used
+non-force updates with the expected branch head, reconstructed exact published
+commit objects locally, and preserved the remote history. The final follow-up
+only records these results in documentation and uses `[skip ci]`; executable
+source and CI configuration remain those of the verified commit above.
 
 ## Launch decision and next work
 

@@ -154,4 +154,7 @@ are tracked above; Supabase identity/backup are still unverified.
   and Founder assertion regressions; local 38 Python / 24 JS checks pass.
 - [x] Record requirement-level PASS/FAIL/BLOCKED evidence in FOUNDER_TEST_REPORT.md;
   commercial launch fails. Add CI browser lost-response and container restart checks.
-- [ ] Commit/publish verified development changes and inspect GitHub CI.
+- [x] Publish source `1266d139` and inspect run 39723075114: all four jobs pass;
+  38 Python, 24 JS, eight PostgreSQL security/migration, 32 PostgreSQL API, ten
+  Chromium workflows and expanded container/restart checks verified.
+- [x] Publish final evidence/report; launch remains FAIL with explicit unfinished gates.

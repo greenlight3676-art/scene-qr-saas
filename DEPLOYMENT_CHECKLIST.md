@@ -33,3 +33,14 @@
 - [ ] Verify failed imports roll back, preserve source data, and reset sequences correctly.
 - [ ] Implement/test RLS with tenant A/B and anonymous negative cases before commercial rollout.
 - [ ] Reconcile PostgreSQL writes before reverting to a stale SQLite backup.
+
+
+## Founder’s Test audit evidence — 2026-10-22
+
+Commercial launch remains **FAIL**. See FOUNDER_TEST_REPORT.md for per-requirement
+PASS/FAIL/BLOCKED findings. Source `1266d139` passed all four jobs in
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39723075114,
+including restricted PostgreSQL, ten Chromium workflows and a non-demo Docker
+workflow with restart persistence. These automated synthetic checks do not
+complete the HTTPS/physical-phone, managed auth, billing, complete tenant RLS,
+hosted restore, monitoring or privacy-operation gates above.
