@@ -214,3 +214,14 @@ external message or force push was performed.
 Local operations-batch verification: 33 Python checks passed in 59.91 seconds,
 17 skipped (8 PostgreSQL and 9 opt-in browser workflows); all 20 frontend checks
 passed. JavaScript syntax, Python compilation and whitespace checks passed.
+
+### Operations CI selector correction
+
+Published source `1f41e1d8828300860495392968f757a537992c7a` with exact local/remote
+tree `3476bcb4f34bc677e8391969e0b95394eefe3caa`.
+CI: https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39717564931
+Application, PostgreSQL and container jobs passed. Chromium passed all seven prior
+workflows; both new cases stopped at an ambiguous test locator because signup
+creates two default stations. Scope the form and QR visibility assertions to the
+station ID under test; application code is unchanged by this correction. Repeat
+all CI jobs to verify the complete workflow rather than skipping the failing cases.

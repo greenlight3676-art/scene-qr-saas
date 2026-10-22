@@ -114,3 +114,7 @@ project identity and backup evidence remain unverified; no hosted migration ran.
 Local operations-batch verification: 33 Python checks passed, 17 skipped for
 separate PostgreSQL/browser runs; 20 frontend checks, syntax, compilation and
 whitespace checks passed. GitHub CI remains pending for this source revision.
+
+Operations source `1f41e1d`: application/PostgreSQL/container CI passed. Both new
+browser cases exposed an ambiguous test selector for two default stations; scoped
+to the target station ID and queued for complete re-verification (7 existing cases passed).
