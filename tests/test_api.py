@@ -553,3 +553,93 @@ def test_structured_analytics_include_legacy_unknowns_and_are_tenant_scoped():
         assert other.get('/api/admin/'+foreign).json()['analytics']['catalog_requests']['requests']==0
         assert other.get('/api/admin/'+foreign).json()['analytics']['lead_stages']['qualified']==0
         assert 'lead_stages' not in guest.get('/api/q/'+token).text
+
+
+def test_founder_gate_new_business_guest_lead_and_private_receipt():
+    """Founder gate: two real roles, a real QR, and no cross-business data leaks.
+
+    Runs only against disposable local/CI data; not a hosted customer database.
+    """
+    with TestClient(app) as owner, TestClient(app) as guest, TestClient(app) as competitor:
+        slug, headers = registration(owner, 'founder-gate-owner@example.invalid',
+                                     'Founders Sample Auto Studio')
+        other_slug, other_headers = registration(
+            competitor, 'founder-gate-other@example.invalid', 'Other Sample Studio')
+        board = owner.get(f'/api/admin/{slug}')
+        assert board.status_code == 200
+        station = board.json()['stations'][0]
+        token = station['token']
+
+        # A stranger can reach the catalog from a QR code without signing in.
+        qr = guest.get(f'/api/qr/{token}.png')
+        assert qr.status_code == 200 and qr.content.startswith(b'\x89PNG')
+        catalog = guest.get(f'/api/q/{token}')
+        assert catalog.status_code == 200 and catalog.json()['slug'] == slug
+        assert 'founder-gate-owner@example.invalid' not in catalog.text
+        assert guest.get(f'/api/admin/{slug}').status_code == 401
+        assert competitor.get(f'/api/admin/{slug}').status_code == 404
+
+        # A lead with a contact address must provide explicit reply consent.
+        inquiry = {
+            'kind': 'question',
+            'message': 'Can I get a quote for synthetic detailing?',
+            'customer_name': 'Sample Customer',
+            'customer_contact': 'founder-guest@example.invalid',
+            'client_key': 'founder-gate-lead-00001',
+        }
+        assert guest.post(f'/api/q/{token}/requests', json=inquiry).status_code == 400
+        inquiry['reply_consent'] = True
+        submitted = guest.post(f'/api/q/{token}/requests', json=inquiry)
+        assert submitted.status_code == 200, submitted.text
+        receipt_id = submitted.json()['request_id']
+        ticket = submitted.json()['ticket']
+
+        # Public access never reveals private contact information or receipts.
+        receipt_path = f'/api/guest/requests/{receipt_id}'
+        assert guest.get(receipt_path).status_code == 401
+        assert guest.get(receipt_path, headers={'x-scene-ticket': 'wrong'}).status_code == 404
+        correct = guest.get(receipt_path, headers={'x-scene-ticket': ticket})
+        assert correct.status_code == 200 and correct.json()['status'] == 'open'
+        assert 'founder-guest@example.invalid' not in correct.text
+        assert 'founder-guest@example.invalid' not in guest.get(f'/api/q/{token}').text
+
+        # Only the right business sees and qualifies its lead.
+        request_path = f'/api/admin/{slug}/requests'
+        own = owner.get(request_path, params={'search': 'founder-guest@example.invalid'})
+        assert own.status_code == 200
+        stored = next(item for item in own.json()['requests']
+                      if item['id'] == receipt_id)
+        assert stored['customer_contact'] == 'founder-guest@example.invalid'
+        assert stored['lead_status'] == 'new'
+        assert competitor.get(request_path).status_code == 404
+        assert competitor.get(f'/api/admin/{other_slug}/requests').json()['total'] == 0
+        assert competitor.patch(f'{request_path}/{receipt_id}/lead',
+                                headers=other_headers,
+                                json={'status': 'qualified'}).status_code == 404
+        assert owner.patch(f'{request_path}/{receipt_id}/lead',
+                           json={'status': 'qualified'}).status_code == 403
+        qualified = owner.patch(f'{request_path}/{receipt_id}/lead',
+                                headers=headers, json={'status': 'qualified'})
+        assert qualified.status_code == 200
+
+        # A private ticket permits status checks and safe idempotent retries.
+        complete = owner.patch(f'{request_path}/{receipt_id}', headers=headers,
+                               json={'status': 'completed'})
+        assert complete.status_code == 200
+        assert guest.get(receipt_path, headers={'x-scene-ticket': ticket}).json()['status'] == 'completed'
+        duplicate = guest.post(f'/api/q/{token}/requests', json=inquiry,
+                               headers={'x-scene-ticket': ticket})
+        assert duplicate.status_code == 200
+        assert duplicate.json()['request_id'] == receipt_id
+        assert duplicate.json()['already_sent'] is True
+        assert guest.post(f'/api/q/{token}/requests', json=inquiry).status_code == 409
+
+        # Rotating stolen/lost printed QR tokens closes the old public entry.
+        rotated = owner.post(f'/api/admin/{slug}/stations/{station["id"]}/rotate',
+                             headers=headers)
+        assert rotated.status_code == 200
+        assert guest.get(f'/api/q/{token}').status_code == 404
+        fresh = owner.get(f'/api/admin/{slug}').json()['stations'][0]['token']
+        assert fresh != token
+        assert guest.get(f'/api/q/{fresh}').status_code == 200
+        assert guest.get(receipt_path, headers={'x-scene-ticket': ticket}).json()['status'] == 'completed'
