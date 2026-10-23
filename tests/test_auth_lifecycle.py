@@ -79,6 +79,14 @@ def test_recovery_is_restricted_csrf_bound_and_revokes_before_external_write(mon
         assert c.execute('SELECT revoked_before FROM auth_blocks WHERE subject=?',(subject,)).fetchone()
         uid=c.execute('SELECT user_id FROM auth_identities WHERE subject=?',(subject,)).fetchone()['user_id']
         assert not c.execute('SELECT 1 FROM sessions WHERE user_id=?',(uid,)).fetchone()
+    assert client.post('/api/auth/login',json={'email':email,'password':'SyntheticPassword123!'}).status_code==401
+    # A fresh provider-verified recovery code is the only way out of pending reset.
+    monkeypatch.setattr(managed_auth,'call',real)
+    assert client.post('/api/auth/recover',json={'email':email}).status_code==200
+    assert client.post('/api/auth/verify',json={'token':'654321'}).status_code==200
+    csrf=client.get('/api/auth/recovery-session').json()['csrf']
+    assert client.post('/api/auth/complete-recovery',json={'password':'SyntheticNewPassword123!'},headers={'x-scene-csrf':csrf}).status_code==200
+    assert client.post('/api/auth/reset-password',json={'access_token':token,'password':'AnotherSyntheticPassword123!'}).status_code==401
 
 
 def test_verification_mismatch_does_not_provision_account(monkeypatch):
@@ -87,3 +95,30 @@ def test_verification_mismatch_does_not_provision_account(monkeypatch):
     assert client.post('/api/auth/signup',json={'email':'expected@example.invalid','password':'SyntheticPassword123!','name':'Expected','industry':'auto'}).status_code==202
     assert client.post('/api/auth/verify',json={'token':'123456'}).status_code==401
     with server.db() as c:assert not c.execute('SELECT id FROM users WHERE email=?',('expected@example.invalid',)).fetchone()
+
+
+def test_logout_can_revoke_local_cookie_during_provider_outage(monkeypatch):
+    email='managed-outage-logout@example.invalid';subject='55555555-5555-4555-8555-555555555555'
+    provider(monkeypatch,email,subject)
+    client=TestClient(server.app)
+    assert client.post('/api/auth/login',json={'email':email,'password':'SyntheticPassword123!'}).status_code==200
+    csrf=client.get('/api/me').json()['csrf']
+    with patch.object(managed_auth,'verified_user',side_effect=managed_auth.AuthError()):
+        assert client.get('/api/me').status_code==401
+        assert client.post('/api/auth/logout',json={},headers={'x-scene-csrf':csrf}).status_code==200
+    assert not client.cookies.get('scene_session')
+
+
+def test_legacy_identity_migration_requires_both_credentials_and_never_reassigns(monkeypatch):
+    client=TestClient(server.app)
+    slug,_=registration(client,'legacy-dual-proof@example.invalid','Legacy dual proof')
+    token,_=provider(monkeypatch,'legacy-dual-proof@example.invalid','66666666-6666-4666-8666-666666666666')
+    body={'access_token':token,'legacy_password':'WrongSyntheticPassword!'}
+    assert client.post('/api/auth/migrate-identity',json=body).status_code==401
+    body['legacy_password']='ExampleStrongPassword123!'
+    assert client.post('/api/auth/migrate-identity',json=body).status_code==200
+    me=client.get('/api/me').json()
+    assert me['businesses'][0]['slug']==slug and me['businesses'][0]['role']=='owner'
+    assert client.post('/api/auth/migrate-identity',json=body).status_code==409
+    provider(monkeypatch,'unrelated-provider@example.invalid','77777777-7777-4777-8777-777777777777')
+    assert TestClient(server.app).post('/api/auth/migrate-identity',json=body).status_code==401

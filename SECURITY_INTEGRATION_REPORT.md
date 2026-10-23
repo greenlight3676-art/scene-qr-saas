@@ -1,5 +1,8 @@
 # PostgreSQL/Supabase security preparation — 2026-10-22
 
+Historical preparation report. Current implementation and verification supersede
+these limits in [BACKEND_COMPLETION_REPORT.md](BACKEND_COMPLETION_REPORT.md).
+
 Destination identity supplied/previously verified: FORGE, `cwehqnziwabvnzviaqlf`,
 us-east-1. No hosted migration, production write, identity binding, email send,
 installation or deployment was performed during this work. SQLite remains default.

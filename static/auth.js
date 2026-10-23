@@ -48,3 +48,19 @@ document.querySelector('#recover-form').addEventListener('submit',async event=>{
     statusNode.textContent='If eligible, check your email and enter the code in this browser.';
   } catch(error) {statusNode.textContent=error.message;}
 });
+
+if(new URLSearchParams(location.search).has('onboard')) {
+  document.querySelector('#onboard-form').hidden=false;
+  document.querySelector('#verify-form').hidden=true;
+  statusNode.textContent='Finish setting up your verified account.';
+}
+document.querySelector('#onboard-form').addEventListener('submit',async event=>{
+  event.preventDefault();
+  try {
+    const response=await fetch('/api/me',{credentials:'same-origin'});
+    const session=await response.json();
+    if(!response.ok) throw new Error('Sign in again to finish setup.');
+    await post('/api/organizations',{name:document.querySelector('#business-name').value.trim(),industry:document.querySelector('#business-industry').value},session.csrf);
+    location.assign('/');
+  } catch(error) {statusNode.textContent=error.message;}
+});

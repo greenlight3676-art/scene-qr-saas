@@ -2,6 +2,7 @@
 import base64
 import json
 import secrets
+import os
 from pydantic import BaseModel, Field
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -24,9 +25,9 @@ def check_revocation(s, c, subject, token):
         s.fail(401, 'Sign in again after the password change')
 
 
-def ensure_identity(s, subject, token, email):
+def ensure_identity(s, subject, token, email, recovery=False):
     with s.db() as c:
-        check_revocation(s, c, subject, token)
+        if not recovery: check_revocation(s, c, subject, token)
         identity = c.execute('SELECT user_id FROM auth_identities WHERE subject=?', (subject,)).fetchone()
         if identity:
             return identity['user_id']
@@ -67,7 +68,8 @@ def flow_cookie(s, response, value):
 
 
 def register(s, body):
-    if __import__('os').getenv('SCENE_ENV') == 'production':
+    if len(body.password)<12: s.fail(400, 'Use at least 12 characters for a managed account password')
+    if os.getenv('SCENE_ENV') == 'production':
         try: managed_auth.require_email_confirmation()
         except managed_auth.AuthError: s.fail(503, 'Email confirmation policy is not ready')
     value = start_flow(s, body.email.lower().strip(), 'signup', body.name.strip(), body.industry)
@@ -82,10 +84,14 @@ def register(s, body):
         'note': 'Check your email, then verify in this browser.', 'next': '/auth/confirm'}, status_code=202), value)
 
 
-def revoke_sessions(s, subject):
+RESET_PENDING = 9223372036854775807
+
+
+def revoke_sessions(s, subject, token=None, pending=False):
+    cutoff=RESET_PENDING if pending else max(s.ts(),token_issued_at(token or ''))
     with s.db() as c:
         c.execute('INSERT INTO auth_blocks(subject,revoked_before) VALUES(?,?) ON CONFLICT(subject) DO UPDATE SET revoked_before=excluded.revoked_before',
-                  (subject, s.ts()))
+                  (subject, cutoff))
         identity = c.execute('SELECT user_id FROM auth_identities WHERE subject=?', (subject,)).fetchone()
         if identity:
             c.execute('DELETE FROM sessions WHERE user_id=?', (identity['user_id'],))
@@ -98,6 +104,11 @@ class Verification(BaseModel):
 
 class PasswordChange(BaseModel):
     password: str = Field(min_length=12, max_length=128)
+
+
+class LegacyBinding(BaseModel):
+    access_token: str = Field(min_length=20, max_length=8192)
+    legacy_password: str = Field(min_length=10, max_length=128)
 
 
 class AcceptInvite(BaseModel):
@@ -125,6 +136,32 @@ def accept_invite(s, c, uid, token):
 
 
 def install(s):
+    @s.app.post('/api/auth/migrate-identity')
+    def migrate_identity(body: LegacyBinding, request: Request):
+        s.same_origin(request);s.rate_limit(request,'identity-migration',5,3600)
+        if not managed_auth.enabled():s.fail(503,'Managed identity migration is not configured')
+        try:
+            subject=managed_auth.verified_user(body.access_token)
+            provider=managed_auth.call('user',token=body.access_token)
+        except managed_auth.AuthError:s.fail(401,'Both account credentials must be verified')
+        email=provider.get('email','').lower().strip()
+        if provider.get('id')!=subject or not provider.get('email_confirmed_at') or provider.get('is_anonymous'):
+            s.fail(401,'Both account credentials must be verified')
+        with s.db() as c:
+            check_revocation(s,c,subject,body.access_token)
+            legacy=c.execute('SELECT id,password FROM users WHERE email=?',(email,)).fetchone()
+            if not legacy or not s.password_ok(body.legacy_password,legacy['password']):
+                s.fail(401,'Both account credentials must be verified')
+            if c.execute('SELECT 1 FROM auth_identities WHERE subject=? OR user_id=?',(subject,legacy['id'])).fetchone():
+                s.fail(409,'An identity is already bound; reassignment is not allowed')
+            s.scope(c,'scene.auth_subject',subject)
+            c.execute('INSERT INTO auth_identities(subject,user_id) VALUES(?,?)',(subject,legacy['id']))
+            c.execute('DELETE FROM sessions WHERE user_id=?',(legacy['id'],))
+            uid=legacy['id']
+        response=JSONResponse({'ok':True})
+        s.signin(response,uid,body.access_token,300)
+        return response
+
     @s.app.post('/api/auth/verify')
     def verify(body: Verification, request: Request):
         s.same_origin(request); s.rate_limit(request, 'verify', 8, 300)
@@ -143,7 +180,7 @@ def install(s):
             result = managed_auth.call('verify', payload)
             token = result.get('access_token')
             subject = managed_auth.verified_user(token)
-            uid = ensure_identity(s, subject, token, flow['email'])
+            uid = ensure_identity(s, subject, token, flow['email'], recovery=flow['purpose']=='recovery')
             lifetime = valid_lifetime(result)
         except managed_auth.AuthError:
             s.fail(401, 'Verification code is invalid or expired')
@@ -165,8 +202,9 @@ def install(s):
         try:
             subject = managed_auth.verified_user(session['managed_token'])
             # Revoke locally BEFORE the external write. Failure never leaves old sessions usable.
-            revoke_sessions(s, subject)
+            revoke_sessions(s, subject, session['managed_token'], pending=True)
             managed_auth.call('user', {'password': body.password}, token=session['managed_token'], method='PUT')
+            revoke_sessions(s, subject, session['managed_token'])
         except managed_auth.AuthError:
             s.fail(503, 'Recovery could not finish; request a new code')
         response = JSONResponse({'ok': True, 'note': 'Password changed. Sign in again.'})

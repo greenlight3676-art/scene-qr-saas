@@ -160,3 +160,30 @@ provider public settings require email confirmation. Hosted migration inventory
 is also empty. The CI dump/restore drill reuses the existing PostgreSQL container
 tools; no local package installation or hosted test database is required.
 See OPERATIONS_RUNBOOK.md for staging, backup/restore and incident procedures.
+
+Recovery/compatibility follow-up: addressed invitation email is now available in
+the existing team form; verified users without a business get an onboarding form.
+Logout revokes the local cookie even when the provider is unavailable. A pending
+password update blocks normal sign-in, leaves old sessions revoked on failure,
+and requires a fresh provider-verified recovery flow to retry. Success revokes
+sessions again before releasing the block. Recovery bearer reuse is rejected.
+
+Legacy beta accounts can explicitly migrate through
+`POST /api/auth/migrate-identity` with **both** a provider-verified matching-email
+access token and their existing beta password. It preserves the user ID and
+memberships, revokes old local sessions, refuses any reassignment and requires no
+runtime owner/service credential. Email matching alone still never links an
+account. Tests cover incorrect credentials, successful dual proof and rebind denial.
+
+Verified source `b8bc335` passed **all four CI jobs** in
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39892454692:
+62 Python tests; 24 frontend tests; 11 PostgreSQL migration/RLS/import/actual
+pg_dump→pg_restore checks; 50 restricted PostgreSQL API checks (one SQLite-only
+trigger test skipped); 10 Chromium workflows; Docker readiness/startup and account/
+request persistence after restart. Expected negative permission errors in the
+PostgreSQL service log are assertions, not failing checks.
+
+The final recovery/UI/legacy-migration follow-up passed **64 local Python tests,
+21 skipped** (11 separate PostgreSQL and 10 browser cases). Python compilation,
+JavaScript syntax, frontend runner and whitespace checks passed. Provider responses
+remain synthetic; no real email, hosted Auth user or Stripe subscription was created.

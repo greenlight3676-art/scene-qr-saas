@@ -227,7 +227,7 @@ def user_session(request: Request, mutate=False, purpose='login'):
         except managed_auth.AuthError:
             fail(401, 'Please sign in again')
         with db() as c:
-            auth_backend.check_revocation(__import__(__name__), c, subject, session['managed_token'])
+            if purpose != 'recovery': auth_backend.check_revocation(__import__(__name__), c, subject, session['managed_token'])
             identity = c.execute('SELECT user_id FROM auth_identities WHERE subject=?', (subject,)).fetchone()
             if not identity or identity['user_id'] != session['user_id']:
                 fail(401, 'Please sign in again')
@@ -370,8 +370,13 @@ def join(body: Join, request: Request):
 
 @app.post('/api/auth/logout')
 def logout(request: Request):
-    s=user_session(request,True)
-    with db() as c: c.execute('DELETE FROM sessions WHERE token_hash=?',(s['token_hash'],))
+    same_origin(request)
+    cookie=request.cookies.get('scene_session','')
+    with db() as c:
+        row=c.execute('SELECT csrf,expires_at FROM sessions WHERE token_hash=?',(sha(cookie),)).fetchone()
+        if row and row['expires_at']>ts() and not hmac.compare_digest(row['csrf'],request.headers.get('x-scene-csrf','')):
+            fail(403,'Invalid session token')
+        c.execute('DELETE FROM sessions WHERE token_hash=?',(sha(cookie),))
     response=JSONResponse({'ok':True});response.delete_cookie('scene_session',path='/');return response
 
 @app.get('/api/me')
@@ -380,7 +385,7 @@ def me(request: Request):
     with db() as c:
         u=c.execute('SELECT email FROM users WHERE id=?',(s['user_id'],)).fetchone()
         b=c.execute('''SELECT b.slug,b.name,b.industry,b.accent,m.role FROM businesses b JOIN memberships m ON m.business_id=b.id WHERE m.user_id=? ORDER BY b.id''',(s['user_id'],)).fetchall()
-        return {'email':u['email'],'csrf':s['csrf'],'businesses':[dict(v) for v in b]}
+        return {'email':u['email'],'csrf':s['csrf'],'auth_mode':'supabase' if managed_auth.enabled() else 'local','businesses':[dict(v) for v in b]}
 
 @app.get('/api/demo/{slug}')
 def demo_entry(slug: str):
@@ -749,8 +754,9 @@ def reset_password(body: RecoverPassword, request: Request):
     try:
         subject = managed_auth.verified_user(body.access_token)
         with db() as c: auth_backend.check_revocation(__import__(__name__),c,subject,body.access_token)
-        auth_backend.revoke_sessions(__import__(__name__), subject)
+        auth_backend.revoke_sessions(__import__(__name__), subject, body.access_token, pending=True)
         managed_auth.call('user', {'password': body.password}, token=body.access_token, method='PUT')
+        auth_backend.revoke_sessions(__import__(__name__), subject, body.access_token)
     except managed_auth.AuthError:
         fail(401, 'Password recovery could not be verified')
     with db() as c:

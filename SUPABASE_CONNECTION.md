@@ -18,7 +18,7 @@ This is the newly created **Scene QR SaaS** project. Do not repurpose the Cutz b
 
 ## Important: connected project is not a completed migration
 
-The existing working app is FastAPI + SQLite by default. Its optional PostgreSQL adapter is server-side Psycopg, enabled by `SCENE_DATABASE_URL`; its migrations use `SCENE_MIGRATION_DATABASE_URL`. Optional server-side managed Auth login and recovery API preparation now exists; hosted identity provisioning, confirmation/recovery UI, email delivery and realtime remain incomplete. See `SECURITY_INTEGRATION_REPORT.md`.
+The existing working app is FastAPI + SQLite by default. Its optional PostgreSQL adapter is server-side Psycopg, enabled by `SCENE_DATABASE_URL`; its migrations use `SCENE_MIGRATION_DATABASE_URL`. Managed registration, login, confirmation/recovery and onboarding APIs/UI, invitations and an outbox are implemented and tested with synthetic providers. Hosted provider configuration/delivery verification and realtime remain outstanding. See `BACKEND_COMPLETION_REPORT.md` and `OPERATIONS_RUNBOOK.md`.
 
 * Do **not** point the browser at server/database credentials. Never commit database passwords, service role keys, access tokens, `.env` files, or customer data.
 * Do **not** run `migrate.py up`, `database_security.py`, `supabase db push`, or a hosted data import until the schema plan, restricted runtime role, backup/recovery path and target environment have been reviewed and validated.
