@@ -114,6 +114,10 @@ def same_origin(request: Request):
 def init():
     operations.validate_environment()
     managed_auth.validate_config()
+    if os.getenv('SCENE_ENV')=='production':
+        try: managed_auth.require_email_confirmation()
+        except managed_auth.AuthError:
+            raise RuntimeError('Managed email confirmation policy could not be verified') from None
     if DATABASE_URL:
         if DEMO:
             raise RuntimeError('PostgreSQL requires SCENE_DEMO=0')
@@ -265,9 +269,11 @@ def public_bundle(c, b, spot):
 
 def resolve_q(c, token):
     scope(c, 'scene.qr_token', token)
-    row=c.execute('''SELECT s.id station_id,s.label,s.code,s.business_id,s.location_id,s.destination,s.content_title,s.content_message,b.id,b.name,b.slug,b.industry,b.accent,b.tagline FROM stations s JOIN businesses b ON b.id=s.business_id LEFT JOIN locations l ON l.id=s.location_id AND l.business_id=s.business_id WHERE s.token=? AND s.active=1 AND (s.location_id IS NULL OR l.active=1)''',(token,)).fetchone()
+    row=c.execute('''SELECT s.id station_id,s.label,s.code,s.business_id,s.location_id,s.destination,s.content_title,s.content_message,b.id,b.name,b.slug,b.industry,b.accent,b.tagline FROM stations s JOIN businesses b ON b.id=s.business_id WHERE s.token=? AND s.active=1''',(token,)).fetchone()
     if not row: fail(404,'QR location is unavailable')
     scope(c, 'scene.tenant_id', row['business_id'])
+    if row['location_id'] and not c.execute('SELECT 1 FROM locations WHERE id=? AND business_id=? AND active=1',(row['location_id'],row['business_id'])).fetchone():
+        fail(404, 'QR location is unavailable')
     return row
 
 @app.middleware('http')

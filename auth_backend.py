@@ -67,6 +67,9 @@ def flow_cookie(s, response, value):
 
 
 def register(s, body):
+    if __import__('os').getenv('SCENE_ENV') == 'production':
+        try: managed_auth.require_email_confirmation()
+        except managed_auth.AuthError: s.fail(503, 'Email confirmation policy is not ready')
     value = start_flow(s, body.email.lower().strip(), 'signup', body.name.strip(), body.industry)
     payload = {'email': body.email.lower().strip(), 'password': body.password}
     if body.captcha_token:

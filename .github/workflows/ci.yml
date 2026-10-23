@@ -45,7 +45,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready --health-interval 5s
+          --health-cmd "pg_isready -U scene_test -d scene_test" --health-interval 5s
           --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
@@ -55,8 +55,9 @@ jobs:
       - run: python -m pip install -r requirements-dev.txt -r requirements-postgres.txt
       - name: PostgreSQL migration and tenant reference checks
         env:
+          SCENE_TEST_PG_CONTAINER: ${{ job.services.postgres.id }}
           SCENE_TEST_POSTGRES_URL: postgresql://scene_test:disposable-ci-only@localhost:5432/scene_test
-        run: python -m pytest -q tests/test_postgres.py
+        run: python -m pytest -q tests/test_postgres.py tests/test_postgres_backup.py
       - name: Full API parity on restricted PostgreSQL runtime role
         env:
           SCENE_TEST_POSTGRES_URL: postgresql://scene_test:disposable-ci-only@localhost:5432/scene_test

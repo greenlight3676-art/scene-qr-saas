@@ -143,3 +143,20 @@ First full expanded local run after the outbox fixture fix: **60 passed,
 frontend runner and JS syntax passed; Python compilation/whitespace checks passed.
 The suite uses isolated synthetic databases. Follow-up checks and CI will be
 recorded with their actual outcomes; no skipped check is counted as passed.
+
+Published integration source `a06d3e2` with exact local/remote tree match. CI run
+39891619290 passed application and container/restart jobs and all **10 PostgreSQL
+migration/RLS/import tests**. Restricted PostgreSQL API parity exposed one real
+bug: a QR/location join ran before setting tenant scope, so RLS correctly hid the
+location and made a valid QR appear unavailable. Corrected resolution to validate
+the token first, set transaction-local tenant scope, then verify active location.
+This keeps RLS strict; no policy was weakened. Added clearer HTTP assertions,
+concurrent transition checks and a separate disposable dump/restore drill.
+
+Follow-up local checks: 15 auth/backend/operations cases passed after the QR lookup
+correction; concurrent request completion allows one winner and returns a conflict
+for the other. Managed production startup/signup/login additionally verify the
+provider public settings require email confirmation. Hosted migration inventory
+is also empty. The CI dump/restore drill reuses the existing PostgreSQL container
+tools; no local package installation or hosted test database is required.
+See OPERATIONS_RUNBOOK.md for staging, backup/restore and incident procedures.

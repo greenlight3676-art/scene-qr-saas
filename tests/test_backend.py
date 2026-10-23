@@ -27,7 +27,9 @@ def test_organizations_locations_qr_guest_customer_end_to_end(monkeypatch):
     lid=location.json()['id'];sid=board['stations'][0]['id'];token=board['stations'][0]['token']
     assert b.patch(f'/api/admin/{foreign}/qr/{sid}',json={'location_id':lid},headers=bheaders).status_code==404
     assert a.patch(f'/api/admin/{slug}/qr/{sid}',json={'location_id':lid,'destination':'service','title':'Hello','message':'Test content'},headers=headers).status_code==200
-    data=guest.get('/api/q/'+token).json()
+    scanned=guest.get('/api/q/'+token)
+    assert scanned.status_code==200,scanned.text
+    data=scanned.json()
     assert data['location_id']==lid and data['content']['title']=='Hello'
     monkeypatch.setenv('SCENE_REQUIRE_GUEST_SESSION','1')
     body={'kind':'question','message':'Synthetic inquiry','client_key':secrets.token_hex(16),
@@ -113,3 +115,17 @@ def test_sqlite_constraints_reject_cross_tenant_location_and_customer():
         with pytest.raises(sqlite3.IntegrityError):
             c.execute('INSERT INTO requests(business_id,station_id,kind,receipt_hash,client_key,created_at,updated_at,customer_id) VALUES(?,?,?,?,?,?,?,?)',
                       (other['id'],other['stations'][0]['id'],'question','synthetic-hash','synthetic-cross-tenant-key',1,1,cid))
+
+
+def test_concurrent_request_status_transition_has_one_winner():
+    from concurrent.futures import ThreadPoolExecutor
+    owner,slug,headers,board=account('concurrent-status-fixture')
+    token=board['stations'][0]['token']
+    result=TestClient(server.app).post('/api/q/'+token+'/requests',json={'kind':'service','client_key':secrets.token_hex(16)})
+    rid=result.json()['request_id']
+    cookie=owner.cookies.get('scene_session')
+    def complete(_):
+        c=TestClient(server.app);c.cookies.set('scene_session',cookie)
+        return c.patch(f'/api/admin/{slug}/requests/{rid}',json={'status':'completed'},headers=headers).status_code
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(complete,range(2)))==[200,409]

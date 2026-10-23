@@ -96,3 +96,12 @@ def test_audit_is_private_tenant_scoped_and_has_no_contact_payload():
     assert 'private@example.invalid' not in str(events) and 'Synthetic private inquiry' not in str(events)
     assert b.get('/api/admin/'+slug+'/audit').status_code == 404
     assert guest.get('/api/admin/'+slug+'/audit').status_code == 401
+
+
+def test_provider_confirmation_policy_fails_closed():
+    for settings in ({}, {'mailer_autoconfirm':True,'external':{'email':True}},
+                     {'mailer_autoconfirm':False,'external':{'email':False}}):
+        with patch.object(managed_auth,'call',return_value=settings):
+            with pytest.raises(managed_auth.AuthError):managed_auth.require_email_confirmation()
+    with patch.object(managed_auth,'call',return_value={'mailer_autoconfirm':False,'external':{'email':True}}):
+        managed_auth.require_email_confirmation()

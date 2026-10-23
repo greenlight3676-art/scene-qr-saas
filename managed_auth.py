@@ -75,6 +75,7 @@ def verified_user(token):
 
 
 def password_login(email, password):
+    if os.getenv('SCENE_ENV') == 'production': require_email_confirmation()
     result = call('token?grant_type=password', {'email': email, 'password': password})
     token = result.get('access_token')
     subject = verified_user(token)
@@ -82,3 +83,9 @@ def password_login(email, password):
     if not isinstance(lifetime, int) or isinstance(lifetime, bool) or lifetime <= 0:
         raise AuthError('Invalid token lifetime')
     return subject, token, min(lifetime, 3600)
+
+
+def require_email_confirmation():
+    settings = call('settings')
+    if settings.get('mailer_autoconfirm') is not False or settings.get('external', {}).get('email') is not True:
+        raise AuthError('Managed provider must require email confirmation')
