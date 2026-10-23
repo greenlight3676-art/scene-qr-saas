@@ -10,7 +10,7 @@ were changed. SQLite beta stays the default; new tables/columns are additive.
 | --- | --- | --- |
 | Authentication | Supabase server password login; email-code/hash verification bound to an HttpOnly browser flow; verified subject provisioning; signup creates owner business only after verification; verified invitation join; addressed invites; logout/all; recovery-only sessions with CSRF; local revocation committed before external password update | Synthetic provider contracts locally; real SMTP/provider flows await staging |
 | Sessions/roles | Opaque hashed session IDs, secure HttpOnly SameSite cookies, CSRF/origin checks, absolute access-token lifetime, provider revalidation outside DB locks, reset revocation cutoff; owner/manager/staff enforced per private operation | Unit/API negative tests; no refresh-token storage (re-login on expiry) |
-| Database | Transactional v1→v4 upgrades; additive SQLite compatibility; read-only snapshot importer preserves IDs and optional new tables in dependency order; restricted runtime-role validation and remote verified TLS; tenant RLS on business data; anonymous Data API denied | Disposable PostgreSQL rehearsal required; hosted changes not authorized |
+| Database | Transactional v1→v4 upgrades; additive SQLite compatibility; read-only snapshot importer preserves IDs and optional new tables in dependency order; restricted runtime-role validation and remote verified TLS; tenant RLS on business data; anonymous Data API denied | Disposable PostgreSQL 16/17 rehearsals passed; hosted changes not authorized |
 | Organizations | Existing business is the tenant/organization; authenticated users create/list their own organizations, owner membership created server-side | Cross-tenant API contracts |
 | Locations/QR | Multiple tenant locations; active states; unique high-entropy station codes; rotate/pause/resume; menu/service/info destinations; escaped dynamic text; two-hour hashed guest sessions bound to tenant/station | Lifecycle/negative tests; no arbitrary external redirects |
 | Guests/requests | Public business/menu APIs, real database-backed requests, item/quantity/consent validation, private receipts, idempotency checks, status transition conflicts and durable abuse buckets | Existing and expanded end-to-end request flows; requests remain unpaid staff requests |
@@ -205,3 +205,43 @@ https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39894113861,
 including the final recovery, dual-proof migration and existing UI compatibility
 changes. The last compatibility batch targets PostgreSQL 17 and disables automatic
 prepared statements; final target-version CI evidence follows below.
+
+## Final verified source and acceptance evidence
+
+Source **be0027300a45e12c2d808e574fda843b977cf5bb** is published on
+`qr-overnight-build`. Its remote tree exactly matches the locally committed tree.
+All four jobs passed in [run 39895059070](https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39895059070).
+
+| Executed check | Result |
+| --- | --- |
+| Local complete Python suite | 64 passed; 21 skipped (11 PostgreSQL, 10 browser, executed separately in CI) |
+| CI application Python suite | 64 passed; same 21 intentional skips |
+| CI frontend regression suite | 24 passed; zero failed/skipped |
+| Disposable PostgreSQL 17 migration, constraints, RLS, importer and actual dump/restore | 11 passed |
+| PostgreSQL restricted runtime-role API/auth/payment/mail contracts | 52 passed; one SQLite-only trigger case skipped |
+| Founder lifecycle on SQLite and restricted PostgreSQL | One passed on each backend (also included in broader suites) |
+| Chromium mobile/guest/staff workflows | 10 passed |
+| Production container | Build, non-demo startup, readiness/static assets and account/request persistence after restart passed |
+| Compilation, JavaScript syntax, whitespace checks | Passed |
+
+There are zero failed tests in the final run. Earlier QR tenant-scope and outbox
+fixture failures were corrected and rerun. Assertions cover tenant A's inability
+to read/write tenant B's private data, unscoped runtime denial, anonymous/browser
+role denial, privilege escalation, immutable audit history and transaction-local
+scope cleanup. The backup rehearsal restores synthetic data into a separate,
+disposable database and compares table counts. It is not a hosted recovery drill.
+
+Native Git transport remains blocked by sandbox DNS. Publication succeeded through
+the connected GitHub integration using exact tree comparison and expected-head,
+non-forced branch updates. Local pre-publication commits were retained on backup
+branches; `main` was not changed. This final report update changes documentation
+only and records the verified source above.
+
+**Deployment readiness: blocked pending external acceptance.** Code and disposable
+integration checks are complete for the implemented scope. Hosted backup/recovery,
+restricted runtime credentials and TLS/pooler connection acceptance; real Supabase
+verification/recovery/invitation delivery; Stripe test-account/webhook acceptance;
+ingress, monitoring, privacy/retention and capacity acceptance remain incomplete.
+Live billing remains disabled. A production rollout requires separate approval
+after these gates pass. No hosted migrations, customer messages, real charges or
+deployment were performed, and the working SQLite beta remains available.

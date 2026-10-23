@@ -163,20 +163,19 @@ are tracked above; Supabase identity/backup are still unverified.
 
 - [x] Read connection, migration, security, storage, authentication and test code.
 - [x] Establish baseline: existing venv, sandbox timer; 38 passed, 18 skipped.
-- [ ] Verify additive version 3 migration/import and expanded tenant RLS in disposable CI PostgreSQL.
+- [x] Verify additive migrations through version 4, import and expanded tenant RLS in disposable CI PostgreSQL 16 and 17 (see final completion report).
 - [x] Verify managed-auth negative tests, session revocation and private audit records: final local suite 43 passed; 19 PostgreSQL/browser checks skipped.
-- [ ] Publish verified development source to qr-overnight-build and inspect CI.
+- [x] Publish verified development source to qr-overnight-build and inspect CI; final source be002730.
 - [ ] Hosted backup/restore drill and restricted-role credential provisioning.
-- [ ] Approve/provision managed identities, signup/invite onboarding and recovery UI.
+- [x] Implement managed identity provisioning, signup/invite onboarding and recovery UI; real hosted identities remain a staging gate.
 - [ ] Verify hosted email confirmation, delivery and password recovery in staging.
 
 See SECURITY_INTEGRATION_REPORT.md for the exact integration boundary.
 
-Security preparation final local follow-up: 11 managed-auth/storage checks passed;
-this includes two added SQLite preservation/TLS regressions. Version 3 migration
-and RLS tests exist but remain unexecuted without PostgreSQL/CI. Publication is
-blocked by GitHub connector transport failure and Git DNS resolution failure.
-No hosted production changes occurred. See SECURITY_INTEGRATION_REPORT.md.
+Historical security preparation follow-up: 11 managed-auth/storage checks passed.
+The complete backend mission below supersedes the earlier publication/CI blocker:
+Git DNS still fails, but the connected GitHub integration published verified trees
+and disposable PostgreSQL rehearsals passed. No hosted production changes occurred.
 
 ## Complete backend mission — 2026-10-22
 
@@ -192,8 +191,9 @@ No hosted production changes occurred. See SECURITY_INTEGRATION_REPORT.md.
   dedupe, canonical subscription reconciliation and server-side request entitlements.
 - [x] Implement invitation outbox, explicit/dry-run worker, bounded retries, revoked
   invitation checks, production env validation, readiness and redacted request logs.
-- [ ] Complete final unit/API/contracts/concurrency checks and disposable PostgreSQL CI.
-- [ ] Publish logical batches and verify remote tree plus all CI jobs.
+- [x] Complete final unit/API/contracts/concurrency checks and disposable PostgreSQL CI:
+  64 application tests, 11 PostgreSQL 17 migration/RLS/restore checks and 52 restricted-role API checks passed; exact skips in completion report.
+- [x] Publish logical batches with exact local/remote tree verification; source be002730.
 - [ ] Hosted restore/security/TLS/SMTP/Stripe staging acceptance and deployment approval.
 
 See BACKEND_COMPLETION_REPORT.md for evidence, limitations and release decision.
