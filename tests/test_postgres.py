@@ -159,21 +159,45 @@ def test_rls_denies_unscoped_reads_cross_tenant_writes_and_browser_roles(postgre
                 raw.execute('INSERT INTO businesses(id,owner_id,name,slug,industry,created_at) VALUES(%s,%s,%s,%s,%s,1)',(bid,uid,'Sample',str(bid),'auto'))
                 raw.execute('INSERT INTO stations(id,business_id,label,code,token,created_at) VALUES(%s,%s,%s,%s,%s,1)',(bid,bid,'Desk','desk',str(bid)))
                 raw.execute("INSERT INTO requests(business_id,station_id,kind,receipt_hash,client_key,created_at,updated_at) VALUES(%s,%s,'service',%s,%s,1,1)",(bid,bid,'synthetic-receipt-'+str(bid),str(bid)))
+                raw.execute("INSERT INTO products(business_id,name) VALUES(%s,'Synthetic item')", (bid,))
+                raw.execute('INSERT INTO scans(station_id,business_id,created_at) VALUES(%s,%s,1)', (bid,bid))
+                raw.execute("INSERT INTO invites(token_hash,business_id,role,expires_at,used_at) VALUES(%s,%s,'staff',2000000000,NULL)", ('synthetic-invite-'+str(bid),bid))
+                raw.execute("INSERT INTO locations VALUES(%s,%s,'Synthetic location','',1,1)",('location-'+str(bid),bid))
+                raw.execute("INSERT INTO customers VALUES(%s,%s,'Synthetic','fixture@example.invalid',1,1,1)",('customer-'+str(bid),bid))
+                raw.execute('INSERT INTO guest_sessions VALUES(%s,%s,%s,1,2000000000)',('guest-'+str(bid),bid,bid))
+                raw.execute('INSERT INTO billing_accounts(business_id,customer_id,updated_at) VALUES(%s,%s,1)',(bid,'cus_'+str(bid)))
+                raw.execute("INSERT INTO mail_outbox(id,business_id,invite_hash,recipient,payload,created_at,next_attempt) VALUES(%s,%s,%s,'fixture@example.invalid','{}',1,1)",('mail-'+str(bid),bid,'synthetic-invite-'+str(bid)))
             harden(raw,role)
             harden(raw,role)
             raw.execute(sql.SQL('SET LOCAL ROLE {}').format(sql.Identifier(role)))
             assert raw.execute('SELECT id FROM requests').fetchall()==[]
+            for table in ('products','stations','scans','invites','audit_events','locations','customers','guest_sessions','billing_accounts','mail_outbox'):
+                assert raw.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table))).fetchall() == []
             c.scope('scene.tenant_id',1)
             assert len(raw.execute('SELECT id FROM requests').fetchall())==1
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 with raw.transaction():
                     raw.execute('UPDATE requests SET business_id=2,station_id=2 WHERE business_id=1')
+            for table in ('stations','products','scans','invites','locations','customers','guest_sessions','billing_accounts','mail_outbox'):
+                rows = raw.execute(sql.SQL('SELECT business_id FROM {}').format(sql.Identifier(table))).fetchall()
+                assert [r['business_id'] for r in rows] == [1]
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    with raw.transaction():
+                        raw.execute(sql.SQL('UPDATE {} SET business_id=2 WHERE business_id=1').format(sql.Identifier(table)))
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                with raw.transaction():
+                    raw.execute("INSERT INTO audit_events VALUES('synthetic-event',2,NULL,'request.created',1,1)")
+            raw.execute("INSERT INTO audit_events VALUES('synthetic-event',1,NULL,'request.created',1,1)")
+            for statement in ('UPDATE audit_events SET resource_id=2', 'DELETE FROM audit_events', 'TRUNCATE audit_events'):
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    with raw.transaction():
+                        raw.execute(statement)
             c.scope('scene.tenant_id','')
             c.scope('scene.receipt_hash','synthetic-receipt-2')
             assert len(raw.execute('SELECT id FROM requests').fetchall())==1
             raw.execute('RESET ROLE')
             raw.execute(sql.SQL('SET LOCAL ROLE {}').format(sql.Identifier(browser)))
-            for table in ('users','sessions','requests','invites'):
+            for table in ('users','sessions','requests','invites','auth_identities','audit_events','customers','guest_sessions','billing_accounts','billing_events','mail_outbox'):
                 assert raw.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table))).fetchall()==[]
         finally:
             raw.rollback()  # roles, schema contents and synthetic data never persist
@@ -197,7 +221,7 @@ def test_version_one_upgrade_preserves_historical_requests(postgres_schema):
         row=raw.execute('SELECT * FROM requests WHERE id=%s',(rid,)).fetchone()
         assert row['message']=='Historical synthetic inquiry'
         assert all(row[name] is None for name in FIELDS)
-        assert raw.execute('SELECT version FROM scene_migrations').fetchone()['version']==2
+        assert raw.execute('SELECT version FROM scene_migrations').fetchone()['version']==4
 
 
 def test_hardening_rejects_inherited_table_ownership(postgres_schema):
@@ -221,3 +245,50 @@ def test_hardening_rejects_inherited_table_ownership(postgres_schema):
             assert not raw.execute("SELECT relrowsecurity AS enabled FROM pg_class WHERE oid='requests'::regclass").fetchone()['enabled']
         finally:
             raw.rollback()
+
+
+def test_legacy_version_two_import_and_scope_lifetime(postgres_schema, sqlite_snapshot):
+    import sqlite3
+    from migrate import import_sqlite
+    from storage import postgres_db
+    url, _ = postgres_schema
+    # Emulate a retained pre-security beta snapshot without modifying real data.
+    with sqlite3.connect(sqlite_snapshot) as old:
+        for trigger in ('station_location_insert','station_location_update','request_customer_insert','request_customer_update'):
+            old.execute(f'DROP TRIGGER IF EXISTS {trigger}')
+        for table in ('mail_outbox','guest_sessions','customers','locations','rate_buckets','auth_flows','auth_blocks','billing_accounts','billing_events'):
+            old.execute(f'DROP TABLE {table}')
+        old.execute('DROP TABLE auth_identities')
+        old.execute('DROP TABLE audit_events')
+        old.execute('ALTER TABLE sessions DROP COLUMN managed_token')
+    with connect(url) as raw:
+        migrate(raw)
+        import_sqlite(raw, sqlite_snapshot)
+        assert raw.execute('SELECT count(*) AS n FROM requests').fetchone()['n'] == 1
+        assert raw.execute('SELECT managed_token FROM sessions').fetchone()['managed_token'] is None
+    with postgres_db(url) as c:
+        c.scope('scene.tenant_id', 123)
+        c.scope('scene.receipt_hash', 'synthetic-receipt')
+    with postgres_db(url) as c:
+        row = c.raw.execute("SELECT current_setting('scene.tenant_id', true) AS tenant, current_setting('scene.receipt_hash',true) AS receipt").fetchone()
+        assert not row['tenant'] and not row['receipt']
+
+
+def test_import_restores_new_location_customer_and_outbox_dependencies(postgres_schema, sqlite_snapshot):
+    import sqlite3
+    from migrate import import_sqlite, BACKEND_TABLES
+    url,_=postgres_schema
+    with sqlite3.connect(sqlite_snapshot) as old:
+        old.execute("INSERT INTO locations VALUES('synthetic-location',1,'Fixture','',1,1)")
+        old.execute("UPDATE stations SET location_id='synthetic-location' WHERE id=1")
+        old.execute("INSERT INTO customers VALUES('synthetic-customer',1,'Synthetic','fixture@example.invalid',1,1,1)")
+        old.execute("UPDATE requests SET customer_id='synthetic-customer' WHERE id=1")
+        old.execute("INSERT INTO mail_outbox(id,business_id,invite_hash,recipient,payload,created_at,next_attempt) VALUES('synthetic-mail',1,'synthetic-invite','fixture@example.invalid','{}',1,1)")
+    with connect(url) as raw:
+        migrate(raw)
+        import_sqlite(raw,sqlite_snapshot)
+        for table in BACKEND_TABLES:
+            with sqlite3.connect(sqlite_snapshot) as old:
+                assert raw.execute(f'SELECT count(*) AS n FROM {table}').fetchone()['n']==old.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
+        assert raw.execute('SELECT customer_id FROM requests WHERE id=1').fetchone()['customer_id']=='synthetic-customer'
+        assert raw.execute('SELECT location_id FROM stations WHERE id=1').fetchone()['location_id']=='synthetic-location'

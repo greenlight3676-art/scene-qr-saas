@@ -4,6 +4,12 @@ Run one Uvicorn worker with a persistent SCENE_DB volume. Demo seed is *off* by 
 This is a pilot backend, not a substitute for hardened hosted PostgreSQL and billing.
 """
 from __future__ import annotations
+import managed_auth
+import auth_backend
+import operations
+import platform_api
+import billing
+import mail_delivery
 import base64
 import hashlib
 import hmac
@@ -84,14 +90,7 @@ def password_ok(p: str, stored: str):
 
 def fail(status: int, message: str): raise HTTPException(status_code=status, detail=message)
 def rate_limit(request: Request, operation: str, limit=25, window=60):
-    ip = request.client.host if request.client else 'unknown'
-    k = f'{operation}:{ip}'
-    now = time.monotonic()
-    with RATE_LOCK:
-        active = [v for v in RATES.get(k, []) if now-v < window]
-        if len(active) >= limit: fail(429, 'Too many requests. Try again shortly.')
-        active.append(now); RATES[k] = active
-        if len(RATES)>5000: RATES.clear()
+    operations.durable_limit(__import__(__name__), request, operation, limit, window)
 
 def same_origin(request: Request):
     origin = request.headers.get('origin')
@@ -104,7 +103,7 @@ def same_origin(request: Request):
                 raise ValueError('Invalid origin')
             return parsed.scheme, parsed.hostname, parsed.port or (443 if parsed.scheme == 'https' else 80)
         try:
-            matches = origin_tuple(origin) == origin_tuple(str(request.base_url))
+            matches = origin_tuple(origin) == origin_tuple(PUBLIC_URL or str(request.base_url))
         except ValueError:
             matches = False
         if not matches:
@@ -113,6 +112,8 @@ def same_origin(request: Request):
         fail(403, 'Cross-site requests are not allowed')
 
 def init():
+    operations.validate_environment()
+    managed_auth.validate_config()
     if DATABASE_URL:
         if DEMO:
             raise RuntimeError('PostgreSQL requires SCENE_DEMO=0')
@@ -135,6 +136,10 @@ def init():
         CREATE INDEX IF NOT EXISTS idx_scans ON scans(business_id,created_at DESC);
         ''')
         upgrade_sqlite(c)
+        from security_schema import upgrade_sqlite as upgrade_security
+        upgrade_security(c)
+        from backend_schema import upgrade as upgrade_backend
+        upgrade_backend(c, sqlite=True)
         if DEMO and c.execute('SELECT COUNT(*) FROM users').fetchone()[0]==0:
             c.execute('INSERT INTO users(email,password,created_at) VALUES(?,?,?)', ('demo@scene.local',password_hash('SceneDemo2026!'),ts()))
             uid = c.execute('SELECT id FROM users WHERE email=?',('demo@scene.local',)).fetchone()[0]
@@ -165,6 +170,7 @@ class Signup(NamedInput):
     password: str = Field(min_length=10,max_length=128)
     name: str = Field(min_length=2,max_length=80)
     industry: str = 'restaurant'
+    captcha_token: str = Field(default='', max_length=4096)
 class Credentials(BaseModel):
     email: str = Field(max_length=200)
     password: str = Field(max_length=128)
@@ -197,23 +203,38 @@ class Settings(NamedInput):
     tagline: str = Field(default='',max_length=120)
     accent: str
 class InviteRequest(BaseModel):
+    email: str = Field(default='', max_length=200)
     role: Literal['staff','manager'] = 'staff'
 class MemberRole(BaseModel):
     role: Literal['staff','manager']
 class Join(Credentials):
     token: str = Field(min_length=20, max_length=100)
 
-def user_session(request: Request, mutate=False):
-    token = request.cookies.get('scene_session','')
-    if not token: fail(401,'Sign in to continue')
+def user_session(request: Request, mutate=False, purpose='login'):
+    cookie = request.cookies.get('scene_session','')
+    if not cookie: fail(401,'Sign in to continue')
     with db() as c:
-        session = c.execute('SELECT * FROM sessions WHERE token_hash=? AND expires_at>?',(sha(token),ts())).fetchone()
-        if session is None: fail(401,'Please sign in again')
-        if mutate:
-            same_origin(request)
-            if not hmac.compare_digest(request.headers.get('x-scene-csrf',''),session['csrf']):
-                fail(403,'Invalid session token')
-        return session
+        row = c.execute('SELECT * FROM sessions WHERE token_hash=? AND expires_at>?', (sha(cookie),ts())).fetchone()
+        if row is None or row['purpose'] != purpose: fail(401,'Please sign in again')
+        session = dict(row)
+    if managed_auth.enabled():
+        try:
+            subject = managed_auth.verified_user(session['managed_token'])
+        except managed_auth.AuthError:
+            fail(401, 'Please sign in again')
+        with db() as c:
+            auth_backend.check_revocation(__import__(__name__), c, subject, session['managed_token'])
+            identity = c.execute('SELECT user_id FROM auth_identities WHERE subject=?', (subject,)).fetchone()
+            if not identity or identity['user_id'] != session['user_id']:
+                fail(401, 'Please sign in again')
+            # Logout/reset racing provider validation must not resurrect a session.
+            if not c.execute('SELECT 1 FROM sessions WHERE token_hash=? AND expires_at>?', (sha(cookie),ts())).fetchone():
+                fail(401, 'Please sign in again')
+    if mutate:
+        same_origin(request)
+        if not hmac.compare_digest(request.headers.get('x-scene-csrf',''), session['csrf']):
+            fail(403,'Invalid session token')
+    return session
 
 def scope(c, name, value):
     if hasattr(c, "scope"):
@@ -226,12 +247,16 @@ def grant(c, slug, uid, roles=None):
     scope(c, 'scene.tenant_id', row['id'])
     return row
 
-def signin(response, uid):
+def signin(response, uid, managed_token=None, lifetime=604800, purpose='login'):
     session = secrets.token_urlsafe(40)
     csrf = secrets.token_urlsafe(24)
     with db() as c:
-        c.execute('INSERT INTO sessions VALUES(?,?,?,?)',(sha(session),uid,csrf,ts()+604800))
-    response.set_cookie('scene_session',session,max_age=604800,secure=SECURE_COOKIE,httponly=True,samesite='lax',path='/')
+        c.execute('DELETE FROM sessions WHERE expires_at<=?', (ts(),))
+        c.execute('INSERT INTO sessions(token_hash,user_id,csrf,expires_at,managed_token,purpose) VALUES(?,?,?,?,?,?)',(sha(session),uid,csrf,ts()+lifetime,managed_token,purpose))
+        for membership in c.execute('SELECT business_id FROM memberships WHERE user_id=?',(uid,)).fetchall():
+            scope(c,'scene.tenant_id',membership['business_id'])
+            audit(c,membership['business_id'],uid,'auth.'+purpose,uid)
+    response.set_cookie('scene_session',session,max_age=lifetime,secure=SECURE_COOKIE,httponly=True,samesite='lax',path='/')
 
 def public_bundle(c, b, spot):
     return {'name':b['name'],'slug':b['slug'],'industry':b['industry'],'accent':b['accent'],'tagline':b['tagline'],
@@ -239,7 +264,8 @@ def public_bundle(c, b, spot):
             'products':[dict(p) for p in c.execute('SELECT id,name,description,category,price_cents,active FROM products WHERE business_id=? AND active=1 ORDER BY id',(b['id'],))]}
 
 def resolve_q(c, token):
-    row=c.execute('''SELECT s.id station_id,s.label,s.code,s.business_id,b.id,b.name,b.slug,b.industry,b.accent,b.tagline FROM stations s JOIN businesses b ON b.id=s.business_id WHERE s.token=? AND s.active=1''',(token,)).fetchone()
+    scope(c, 'scene.qr_token', token)
+    row=c.execute('''SELECT s.id station_id,s.label,s.code,s.business_id,s.location_id,s.destination,s.content_title,s.content_message,b.id,b.name,b.slug,b.industry,b.accent,b.tagline FROM stations s JOIN businesses b ON b.id=s.business_id LEFT JOIN locations l ON l.id=s.location_id AND l.business_id=s.business_id WHERE s.token=? AND s.active=1 AND (s.location_id IS NULL OR l.active=1)''',(token,)).fetchone()
     if not row: fail(404,'QR location is unavailable')
     scope(c, 'scene.tenant_id', row['business_id'])
     return row
@@ -257,33 +283,48 @@ async def security_headers(request, call_next):
     return response
 
 @app.get('/')
-async def index(): return FileResponse(ROOT/'static'/'index.html')
+def index(): return FileResponse(ROOT/'static'/'index.html')
 
 @app.get('/q/{token}')
-async def q_redirect(token:str):
+def q_redirect(token:str):
     with db() as c: resolve_q(c,token)
     return RedirectResponse(url='/?q='+quote(token,safe=''),status_code=302)
 
 @app.post('/api/auth/signup')
-async def signup(body: Signup, request: Request):
+def signup(body: Signup, request: Request):
     same_origin(request);rate_limit(request,'signup',7,3600)
     if body.industry not in INDUSTRIES: fail(400,'Unsupported industry')
     email=body.email.lower().strip();slug=slugify(body.name)
     if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email) or not slug: fail(400,'Invalid email or business name')
+    if managed_auth.enabled():
+        return auth_backend.register(__import__(__name__), body)
     with db() as c:
         if c.execute('SELECT id FROM users WHERE email=?',(email,)).fetchone(): fail(409,'Email is already registered')
         if c.execute('SELECT id FROM businesses WHERE slug=?',(slug,)).fetchone(): slug += '-'+secrets.token_hex(3)
         uid=c.execute('INSERT INTO users(email,password,created_at) VALUES(?,?,?)',(email,password_hash(body.password),ts())).lastrowid
         bid=c.execute('INSERT INTO businesses(owner_id,name,slug,industry,created_at) VALUES(?,?,?,?,?)',(uid,body.name.strip(),slug,body.industry,ts())).lastrowid
         c.execute('INSERT INTO memberships VALUES(?,?,?)',(bid,uid,'owner'))
+        scope(c, 'scene.tenant_id', bid)
         spots = ['Table 01','Table 02','Table 03'] if body.industry=='restaurant' else ['Front Desk','Station 01']
         for label in spots:
             c.execute('INSERT INTO stations(business_id,label,code,token,created_at) VALUES(?,?,?,?,?)',(bid,label,slugify(label),secrets.token_urlsafe(24),ts()))
     response=JSONResponse({'ok':True,'slug':slug});signin(response,uid);return response
 
 @app.post('/api/auth/login')
-async def login(body: Credentials, request: Request):
+def login(body: Credentials, request: Request):
     same_origin(request);rate_limit(request,'login',12,300)
+    if managed_auth.enabled():
+        try:
+            subject, token, lifetime = managed_auth.password_login(body.email.lower().strip(), body.password)
+        except managed_auth.AuthError:
+            fail(401, 'Unable to sign in with a verified account')
+        try:
+            uid = auth_backend.ensure_identity(__import__(__name__), subject, token, body.email.lower().strip())
+        except managed_auth.AuthError:
+            fail(503, 'Identity verification unavailable')
+        response=JSONResponse({'ok':True})
+        signin(response, uid, token, lifetime)
+        return response
     with db() as c:
         row=c.execute('SELECT id,password FROM users WHERE email=?',(body.email.lower().strip(),)).fetchone()
         if not row or not password_ok(body.password,row['password']): fail(401,'Incorrect email or password')
@@ -291,13 +332,25 @@ async def login(body: Credentials, request: Request):
     response=JSONResponse({'ok':True});signin(response,uid);return response
 
 @app.post('/api/auth/join')
-async def join(body: Join, request: Request):
+def join(body: Join, request: Request):
     same_origin(request);rate_limit(request,'join',10,3600)
+    if managed_auth.enabled():
+        try:
+            subject, token, lifetime = managed_auth.password_login(body.email.lower().strip(), body.password)
+            uid = auth_backend.ensure_identity(__import__(__name__), subject, token, body.email.lower().strip())
+        except managed_auth.AuthError:
+            fail(401, 'Sign in with a verified account before joining')
+        with db() as c:
+            auth_backend.accept_invite(__import__(__name__), c, uid, body.token)
+        response=JSONResponse({'ok': True}); signin(response, uid, token, lifetime); return response
     email=body.email.lower().strip()
     if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+',email) or len(body.password)<10: fail(400,'Enter a valid email and password')
     with db() as c:
+        scope(c, 'scene.invite_hash', sha(body.token))
         invitation=c.execute('SELECT * FROM invites WHERE token_hash=? AND used_at IS NULL AND expires_at>?',(sha(body.token),ts())).fetchone()
         if not invitation: fail(410,'Invitation expired or already used')
+        if invitation['email'] and invitation['email'] != email: fail(403, 'Invitation is addressed to another account')
+        scope(c, 'scene.tenant_id', invitation['business_id'])
         user=c.execute('SELECT id,password FROM users WHERE email=?',(email,)).fetchone()
         if user:
             if not password_ok(body.password,user['password']): fail(401,'Incorrect account password')
@@ -310,13 +363,13 @@ async def join(body: Join, request: Request):
     response=JSONResponse({'ok':True});signin(response,uid);return response
 
 @app.post('/api/auth/logout')
-async def logout(request: Request):
+def logout(request: Request):
     s=user_session(request,True)
     with db() as c: c.execute('DELETE FROM sessions WHERE token_hash=?',(s['token_hash'],))
     response=JSONResponse({'ok':True});response.delete_cookie('scene_session',path='/');return response
 
 @app.get('/api/me')
-async def me(request: Request):
+def me(request: Request):
     s=user_session(request)
     with db() as c:
         u=c.execute('SELECT email FROM users WHERE id=?',(s['user_id'],)).fetchone()
@@ -324,28 +377,36 @@ async def me(request: Request):
         return {'email':u['email'],'csrf':s['csrf'],'businesses':[dict(v) for v in b]}
 
 @app.get('/api/demo/{slug}')
-async def demo_entry(slug: str):
+def demo_entry(slug: str):
     if not DEMO or slug not in ('trio-demo','velvet-demo','apex-demo','muse-demo'): fail(404,'Demo unavailable')
     with db() as c:
+        business=c.execute('SELECT id FROM businesses WHERE slug=?',(slug,)).fetchone()
+        if not business: fail(404,'Demo unavailable')
+        scope(c,'scene.tenant_id',business['id'])
         r=c.execute('''SELECT s.token FROM stations s JOIN businesses b ON b.id=s.business_id WHERE b.slug=? AND s.active=1 ORDER BY s.id LIMIT 1''',(slug,)).fetchone()
         if not r: fail(404,'Demo unavailable')
         return {'q':r['token']}
 
 @app.get('/api/q/{token}')
-async def scanned_q(token: str, request: Request):
+def scanned_q(token: str, request: Request):
     rate_limit(request,'scan',120,60)
     with db() as c:
         q=resolve_q(c,token)
         b=c.execute('SELECT * FROM businesses WHERE id=?',(q['business_id'],)).fetchone()
         c.execute('INSERT INTO scans(station_id,business_id,created_at) VALUES(?,?,?)',(q['station_id'],q['business_id'],ts()))
         spot={'label':q['label'],'code':q['code']}
-        return public_bundle(c,b,spot)
+        bundle=public_bundle(c,b,spot)
+        bundle.update(location_id=q['location_id'],destination=q['destination'],content={'title':q['content_title'],'message':q['content_message']})
+        return bundle
 
 @app.post('/api/q/{token}/requests')
-async def guest_request(token: str, body: NewRequest, request: Request):
-    same_origin(request);rate_limit(request,'submit:'+token[:12],12,60)
+def guest_request(token: str, body: NewRequest, request: Request):
+    same_origin(request);rate_limit(request,'submit-global',30,60);rate_limit(request,'submit:'+token[:12],12,60)
     with db() as c:
         q=resolve_q(c,token)
+        platform_api.guest_scope(__import__(__name__),c,q,request)
+        billing.require_entitlement(__import__(__name__),c,q['business_id'])
+        if q['destination']=='info': fail(409, 'This QR location only provides information')
         if body.customer_contact.strip() and not body.reply_consent: fail(400,'Reply consent is required for contact details')
         if body.kind != 'question' and (body.customer_name.strip() or body.customer_contact.strip() or body.reply_consent): fail(400,'Contact details belong on inquiries')
         if body.kind not in ALLOWED_KINDS[q['industry']]: fail(400,'Request not supported here')
@@ -367,10 +428,15 @@ async def guest_request(token: str, body: NewRequest, request: Request):
         receipt=secrets.token_urlsafe(32)
         rid=c.execute('''INSERT INTO requests(business_id,station_id,kind,message,product_id,receipt_hash,client_key,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)''',(q['business_id'],q['station_id'],body.kind,message,item['id'] if item else None,sha(receipt),body.client_key,ts(),ts())).lastrowid
         c.execute('UPDATE requests SET quantity=?,product_name=?,unit_price_cents=?,customer_name=?,customer_contact=?,reply_consent_at=?,lead_status=? WHERE id=? AND business_id=?', (body.quantity if item else None,item['name'] if item else None,item['price_cents'] if item else None,body.customer_name.strip() or None,body.customer_contact.strip() or None,ts() if body.reply_consent and body.customer_contact.strip() else None,'new' if body.kind=='question' else None,rid,q['business_id']))
+        if body.customer_contact.strip() and body.reply_consent:
+            cid=platform_api.save_customer(__import__(__name__),c,q['business_id'],body.customer_name.strip() or 'Guest',body.customer_contact.strip())
+            c.execute('UPDATE requests SET customer_id=? WHERE id=? AND business_id=?',(cid,rid,q['business_id']))
+        audit(c, q['business_id'], None, 'request.created', rid)
         return {'ok':True,'request_id':rid,'ticket':receipt,'status':'open','note':'Staff received your service request. This is not a paid order or confirmed booking.'}
 
 @app.get('/api/guest/requests/{rid}')
-async def guest_status(rid:ResourceID,request:Request):
+def guest_status(rid:ResourceID,request:Request):
+    rate_limit(request,'receipt-status',120,60)
     ticket=request.headers.get('x-scene-ticket','')
     if len(ticket)<25: fail(401,'Request receipt required')
     with db() as c:
@@ -380,7 +446,7 @@ async def guest_status(rid:ResourceID,request:Request):
         return {'status':row['status'],'updated_at':row['updated_at']}
 
 @app.get('/api/admin/{slug}')
-async def admin(slug:str,request:Request):
+def admin(slug:str,request:Request):
     user=user_session(request)
     with db() as c:
         b=grant(c,slug,user['user_id'])
@@ -409,7 +475,7 @@ async def admin(slug:str,request:Request):
           'analytics':{'total':counts['total'],'open':counts['open'] or 0,'resolved':counts['completed'] or 0,'scans':sum(station_scans.values()),'request_kinds':kinds,'lead_stages':lead_stages,'catalog_requests':selections,'stations':station_activity,'daily':activity}}
 
 @app.get('/api/admin/{slug}/requests')
-async def request_history(slug:str,request:Request,
+def request_history(slug:str,request:Request,
                           status:Literal['all','open','in_progress','completed']='all',
                           lead_status:Literal['','new','qualified','closed','unreviewed']='',
                           kind:str=Query(default='',max_length=30),
@@ -452,7 +518,7 @@ async def request_history(slug:str,request:Request,
 
 
 @app.patch('/api/admin/{slug}/requests/{rid}/lead')
-async def update_lead(slug:str,rid:ResourceID,body:LeadStatus,request:Request):
+def update_lead(slug:str,rid:ResourceID,body:LeadStatus,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
@@ -460,10 +526,11 @@ async def update_lead(slug:str,rid:ResourceID,body:LeadStatus,request:Request):
         if not row: fail(404,'Request not found')
         if row['kind']!='question': fail(400,'Only inquiries have lead stages')
         c.execute('UPDATE requests SET lead_status=?,updated_at=? WHERE id=? AND business_id=?',(body.status,ts(),rid,b['id']))
+        audit(c, b['id'], s['user_id'], 'lead.'+body.status, rid)
     return {'ok':True}
 
 @app.patch('/api/admin/{slug}/requests/{rid}')
-async def update_request(slug:str,rid:ResourceID,body:ChangeStatus,request:Request):
+def update_request(slug:str,rid:ResourceID,body:ChangeStatus,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'])
@@ -473,36 +540,40 @@ async def update_request(slug:str,rid:ResourceID,body:ChangeStatus,request:Reque
         if body.status not in allowed[current['status']]: fail(409,'Request already handled or invalid status transition')
         changed=c.execute('UPDATE requests SET status=?,updated_at=? WHERE id=? AND business_id=? AND status=?',(body.status,ts(),rid,b['id'],current['status']))
         if not changed.rowcount: fail(409,'Request changed. Refresh before updating it again.')
+        audit(c, b['id'], s['user_id'], 'request.'+body.status, rid)
         return {'ok':True,'status':body.status}
 
 @app.post('/api/admin/{slug}/products')
-async def add_product(slug:str,body:Product,request:Request):
+def add_product(slug:str,body:Product,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
         rid=c.execute('INSERT INTO products(business_id,name,description,category,price_cents) VALUES(?,?,?,?,?)',(b['id'],body.name.strip(),body.description.strip(),body.category.strip() or 'Featured',body.price_cents)).lastrowid
+        audit(c,b['id'],s['user_id'],'catalog.created',rid)
         return {'ok':True,'id':rid}
 
 @app.patch('/api/admin/{slug}/products/{pid}')
-async def edit_product(slug:str,pid:ResourceID,body:Product,request:Request):
+def edit_product(slug:str,pid:ResourceID,body:Product,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
         changed=c.execute('UPDATE products SET name=?,description=?,category=?,price_cents=? WHERE id=? AND business_id=? AND active=1',
                           (body.name.strip(),body.description.strip(),body.category.strip() or 'Featured',body.price_cents,pid,b['id']))
         if not changed.rowcount: fail(404,'Published item not found')
+        audit(c,b['id'],s['user_id'],'catalog.updated',pid)
     return {'ok':True}
 
 @app.delete('/api/admin/{slug}/products/{pid}')
-async def remove_product(slug:str,pid:ResourceID,request:Request):
+def remove_product(slug:str,pid:ResourceID,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
         if not c.execute('UPDATE products SET active=0 WHERE id=? AND business_id=?',(pid,b['id'])).rowcount: fail(404,'Item not found')
+        audit(c,b['id'],s['user_id'],'catalog.removed',pid)
         return {'ok':True}
 
 @app.post('/api/admin/{slug}/stations')
-async def create_station(slug:str,body:Spot,request:Request):
+def create_station(slug:str,body:Spot,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
@@ -510,47 +581,61 @@ async def create_station(slug:str,body:Spot,request:Request):
         if not code: fail(400,'Choose a valid station name')
         if c.execute('SELECT id FROM stations WHERE business_id=? AND code=?',(b['id'],code)).fetchone(): fail(409,'Location already exists')
         rid=c.execute('INSERT INTO stations(business_id,label,code,token,created_at) VALUES(?,?,?,?,?)',(b['id'],body.label.strip(),code,secrets.token_urlsafe(24),ts())).lastrowid
+        audit(c,b['id'],s['user_id'],'qr.created',rid)
         return {'ok':True,'id':rid}
 
 @app.patch('/api/admin/{slug}/stations/{spot_id}')
-async def edit_station(slug:str,spot_id:ResourceID,body:StationSettings,request:Request):
+def edit_station(slug:str,spot_id:ResourceID,body:StationSettings,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
         changed=c.execute('UPDATE stations SET label=?,active=? WHERE id=? AND business_id=?',
                           (body.label,int(body.active),spot_id,b['id']))
         if not changed.rowcount: fail(404,'Location not found')
+        audit(c,b['id'],s['user_id'],'qr.updated',spot_id)
     return {'ok':True}
 
 @app.post('/api/admin/{slug}/stations/{spot_id}/rotate')
-async def rotate_station(slug:str,spot_id:ResourceID,request:Request):
+def rotate_station(slug:str,spot_id:ResourceID,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
         if not c.execute('UPDATE stations SET token=? WHERE id=? AND business_id=?',(secrets.token_urlsafe(24),spot_id,b['id'])).rowcount: fail(404,'Location not found')
+        audit(c,b['id'],s['user_id'],'qr.rotated',spot_id)
         return {'ok':True,'note':'Old QR links have been revoked. Print new codes.'}
 
 @app.patch('/api/admin/{slug}/settings')
-async def settings(slug:str,body:Settings,request:Request):
+def settings(slug:str,body:Settings,request:Request):
     s=user_session(request,True)
     if not re.fullmatch('#[a-fA-F0-9]{6}',body.accent): fail(400,'Use a six-digit hex color')
     with db() as c:
         b=grant(c,slug,s['user_id'],EDIT_ROLES)
         c.execute('UPDATE businesses SET name=?,tagline=?,accent=? WHERE id=?',(body.name.strip(),body.tagline.strip(),body.accent,b['id']))
+        audit(c,b['id'],s['user_id'],'organization.updated',b['id'])
         return {'ok':True}
 
 @app.post('/api/admin/{slug}/invites')
-async def create_invite(slug:str,body:InviteRequest,request:Request):
+def create_invite(slug:str,body:InviteRequest,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
         token=secrets.token_urlsafe(32)
-        c.execute('INSERT INTO invites(token_hash,business_id,role,expires_at) VALUES(?,?,?,?)',(sha(token),b['id'],body.role,ts()+86400))
+        email = body.email.lower().strip()
+        if email and not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email): fail(400, 'Invalid invitation email')
+        if managed_auth.enabled() and not email: fail(400, 'Managed invitations require a recipient email')
+        c.execute('INSERT INTO invites(token_hash,business_id,role,expires_at,email) VALUES(?,?,?,?,?)',(sha(token),b['id'],body.role,ts()+86400,email or None))
+        audit(c,b['id'],s['user_id'],'invite.created',b['id'])
         origin=PUBLIC_URL or str(request.base_url).rstrip('/')
-        return {'ok':True,'join_url':origin+'/?invite='+quote(token,safe=''),'expires_in_hours':24}
+        join_url=origin+'/?invite='+quote(token,safe='')
+        delivery='not_requested'
+        if email:
+            if not origin.startswith('https://') and os.getenv('SCENE_ENV')=='production': fail(503,'Configure public HTTPS origin')
+            mail_delivery.enqueue(__import__(__name__),c,b['id'],email,sha(token),join_url)
+            delivery='queued'
+        return {'ok':True,'join_url':join_url,'expires_in_hours':24,'delivery':delivery}
 
 @app.get('/api/admin/{slug}/members')
-async def members(slug:str,request:Request):
+def members(slug:str,request:Request):
     s=user_session(request)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
@@ -558,7 +643,7 @@ async def members(slug:str,request:Request):
         return {'members':[dict(r) for r in rows]}
 
 @app.get('/api/admin/{slug}/invites')
-async def pending_invites(slug:str,request:Request):
+def pending_invites(slug:str,request:Request):
     s=user_session(request)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
@@ -566,17 +651,18 @@ async def pending_invites(slug:str,request:Request):
         return {'invites':[dict(r) for r in rows]}
 
 @app.post('/api/admin/{slug}/invites/{invite_id}/revoke')
-async def revoke_invite(slug:str,invite_id:str,request:Request):
+def revoke_invite(slug:str,invite_id:str,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
         if not re.fullmatch('[a-f0-9]{64}',invite_id): fail(404,'Invitation not found')
         changed=c.execute('UPDATE invites SET expires_at=? WHERE token_hash=? AND business_id=? AND used_at IS NULL AND expires_at>?',(ts(),invite_id,b['id'],ts()))
         if not changed.rowcount: fail(404,'Active invitation not found')
+        audit(c,b['id'],s['user_id'],'invite.revoked',b['id'])
         return {'ok':True}
 
 @app.patch('/api/admin/{slug}/members/{uid}')
-async def change_member(slug:str,uid:ResourceID,body:MemberRole,request:Request):
+def change_member(slug:str,uid:ResourceID,body:MemberRole,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
@@ -584,10 +670,11 @@ async def change_member(slug:str,uid:ResourceID,body:MemberRole,request:Request)
         if not target: fail(404,'Member not found')
         if target['role']=='owner': fail(409,'Owner access cannot be changed here')
         c.execute('UPDATE memberships SET role=? WHERE business_id=? AND user_id=?',(body.role,b['id'],uid))
+        audit(c, b['id'], s['user_id'], 'member.'+body.role, uid)
         return {'ok':True}
 
 @app.delete('/api/admin/{slug}/members/{uid}')
-async def revoke_member(slug:str,uid:ResourceID,request:Request):
+def revoke_member(slug:str,uid:ResourceID,request:Request):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
@@ -595,10 +682,12 @@ async def revoke_member(slug:str,uid:ResourceID,request:Request):
         if not target: fail(404,'Member not found')
         if target['role']=='owner': fail(409,'Owner access cannot be removed here')
         c.execute('DELETE FROM memberships WHERE business_id=? AND user_id=?',(b['id'],uid))
+        audit(c, b['id'], s['user_id'], 'member.revoked', uid)
         return {'ok':True}
 
 @app.get('/api/qr/{token}.png')
-async def qr_png(token:str,request:Request):
+def qr_png(token:str,request:Request):
+    rate_limit(request,'qr-image',60,60)
     # Important: keep *.png handler before QR data handler in actual FastAPI route order.
     with db() as c: resolve_q(c,token)
     url=(PUBLIC_URL or str(request.base_url).rstrip('/'))+'/q/'+quote(token,safe='')
@@ -608,4 +697,80 @@ async def qr_png(token:str,request:Request):
     return StreamingResponse(output,media_type='image/png',headers={'Cache-Control':'no-store'})
 
 @app.get('/healthz')
-async def healthz(): return {'ok':True,'mode':'demo' if DEMO else 'pilot'}
+def healthz(): return {'ok':True,'mode':'demo' if DEMO else 'pilot'}
+
+
+def audit(c, business_id, actor_id, action, resource_id):
+    c.execute('INSERT INTO audit_events(event_id,business_id,actor_id,action,resource_id,created_at) VALUES(?,?,?,?,?,?)',
+              (secrets.token_hex(16), business_id, actor_id, action, resource_id, ts()))
+
+
+@app.get('/api/admin/{slug}/audit')
+def audit_history(slug: str, request: Request):
+    s = user_session(request)
+    with db() as c:
+        b = grant(c, slug, s['user_id'], {'owner'})
+        rows = c.execute('SELECT event_id,actor_id,action,resource_id,created_at FROM audit_events WHERE business_id=? ORDER BY created_at DESC,event_id DESC LIMIT 100', (b['id'],)).fetchall()
+        return {'events': [dict(row) for row in rows]}
+
+
+class RecoveryEmail(BaseModel):
+    email: str = Field(min_length=5, max_length=200)
+
+
+class RecoverPassword(BaseModel):
+    access_token: str = Field(min_length=20, max_length=8192)
+    password: str = Field(min_length=12, max_length=128)
+
+
+@app.post('/api/auth/recover')
+def recover(body: RecoveryEmail, request: Request):
+    same_origin(request); rate_limit(request, 'recovery', 5, 3600)
+    if not managed_auth.enabled(): fail(503, 'Managed recovery is not configured')
+    # Generic response even for provider rejection: do not enumerate accounts.
+    flow = auth_backend.start_flow(__import__(__name__), body.email.lower().strip(), 'recovery')
+    try:
+        managed_auth.call('recover', {'email': body.email.lower().strip()})
+    except managed_auth.AuthError:
+        pass
+    return auth_backend.flow_cookie(__import__(__name__), JSONResponse({'ok': True, 'note': 'If eligible, check your email for recovery instructions.', 'next': '/auth/confirm'}), flow)
+
+
+@app.post('/api/auth/reset-password')
+def reset_password(body: RecoverPassword, request: Request):
+    same_origin(request); rate_limit(request, 'password-reset', 5, 3600)
+    if not managed_auth.enabled(): fail(503, 'Managed recovery is not configured')
+    try:
+        subject = managed_auth.verified_user(body.access_token)
+        with db() as c: auth_backend.check_revocation(__import__(__name__),c,subject,body.access_token)
+        auth_backend.revoke_sessions(__import__(__name__), subject)
+        managed_auth.call('user', {'password': body.password}, token=body.access_token, method='PUT')
+    except managed_auth.AuthError:
+        fail(401, 'Password recovery could not be verified')
+    with db() as c:
+        identity = c.execute('SELECT user_id FROM auth_identities WHERE subject=?', (subject,)).fetchone()
+        if identity:
+            c.execute('DELETE FROM sessions WHERE user_id=?', (identity['user_id'],))
+    response = JSONResponse({'ok': True})
+    response.delete_cookie('scene_session', path='/')
+    return response
+
+
+auth_backend.install(__import__(__name__))
+
+@app.get('/api/auth/recovery-session')
+def recovery_session(request: Request):
+    session = user_session(request, purpose='recovery')
+    return {'csrf': session['csrf']}
+
+@app.get('/auth/confirm')
+def confirm_page():
+    return FileResponse(ROOT/'static'/'auth.html')
+
+operations.install(__import__(__name__))
+
+platform_api.install(__import__(__name__))
+
+billing.install(__import__(__name__))
+
+mail_delivery.install(__import__(__name__))

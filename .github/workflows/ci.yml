@@ -61,7 +61,7 @@ jobs:
         env:
           SCENE_TEST_POSTGRES_URL: postgresql://scene_test:disposable-ci-only@localhost:5432/scene_test
           SCENE_TEST_API_BACKEND: postgres
-        run: python -m pytest -q tests/test_api.py
+        run: python -m pytest -q tests/test_api.py tests/test_backend.py tests/test_managed_auth.py tests/test_auth_lifecycle.py tests/test_billing.py tests/test_mail.py
       - name: Founder's Test (restricted PostgreSQL backend)
         env:
           SCENE_TEST_POSTGRES_URL: postgresql://scene_test:disposable-ci-only@localhost:5432/scene_test
@@ -110,7 +110,7 @@ jobs:
           docker run -d --name scene-smoke scene-qr-ci
           docker exec scene-smoke python -c "import psycopg; print('PostgreSQL driver present')"
           for attempt in {1..30}; do
-            if docker exec scene-smoke python -c "import json,urllib.request; result=json.load(urllib.request.urlopen('http://127.0.0.1:8000/healthz')); assert result == {'ok':True,'mode':'pilot'}; assert urllib.request.urlopen('http://127.0.0.1:8000/static/app.js').status == 200"; then
+            if docker exec scene-smoke python -c "import json,urllib.request; result=json.load(urllib.request.urlopen('http://127.0.0.1:8000/healthz')); assert result == {'ok':True,'mode':'pilot'}; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/readyz')) == {'ok':True}; assert urllib.request.urlopen('http://127.0.0.1:8000/static/app.js').status == 200"; then
               docker exec -i scene-smoke python - < tests/container_smoke.py
               exit 0
             fi

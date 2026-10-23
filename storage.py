@@ -6,6 +6,7 @@ connections until finer-grained concurrency is implemented in Task 3.
 """
 from contextlib import contextmanager
 import re
+from backend_schema import TABLES as BACKEND_TABLES, VERSION
 
 IDENTITY_TABLES = {'users', 'businesses', 'stations', 'products', 'requests', 'scans'}
 
@@ -45,7 +46,7 @@ class Connection:
         self.raw = raw
 
     def scope(self, name, value):
-        if name not in ("scene.tenant_id", "scene.receipt_hash"):
+        if name not in ("scene.tenant_id", "scene.receipt_hash", "scene.qr_token", "scene.invite_hash", "scene.auth_subject", "scene.billing_customer", "scene.mail_worker"):
             raise ValueError("Unsupported transaction scope")
         self.raw.execute("SELECT set_config(%s, %s, true)", (name, str(value)))
 
@@ -85,14 +86,23 @@ def verify_runtime_role(raw, role):
 
 
 def verify_postgres(url):
+    from urllib.parse import urlsplit, parse_qs
+    parsed = urlsplit(url)
+    options = parse_qs(parsed.query)
+    hosts = options.get('host', [parsed.hostname]) + options.get('hostaddr', [])
+    local = all(host is None or host in ('localhost', '127.0.0.1', '::1')
+                or host.startswith('/') for host in hosts)
+    if not local and options.get('sslmode') != ['verify-full']:
+        raise RuntimeError('Remote runtime database connections require sslmode=verify-full')
     with connect(url) as raw:
-        role = raw.execute('SELECT current_user AS name').fetchone()['name']
-        verify_runtime_role(raw, role)
-        expected = ('users','businesses','memberships','stations','products','requests','sessions','invites','scans','scene_migrations')
+        identity = raw.execute('SELECT current_user AS name, session_user AS login').fetchone()
+        verify_runtime_role(raw, identity['login'])
+        verify_runtime_role(raw, identity['name'])
+        expected = ('users','businesses','memberships','stations','products','requests','sessions','invites','scans','auth_identities','audit_events','scene_migrations',*BACKEND_TABLES)
         protected = raw.execute('''SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname=current_schema() AND c.relrowsecurity AND c.relname=ANY(%s)''', (list(expected),)).fetchall()
         if {r['relname'] for r in protected} != set(expected):
             raise RuntimeError('Run database_security.py with the dedicated runtime role before starting SCENE')
         version = raw.execute('SELECT version FROM scene_migrations').fetchall()
-        if version != [{'version': 2}]:
-            raise RuntimeError('Apply PostgreSQL schema version 2 before starting SCENE')
+        if version != [{'version': VERSION}]:
+            raise RuntimeError('Apply PostgreSQL current schema version before starting SCENE')

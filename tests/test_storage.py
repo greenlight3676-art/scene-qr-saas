@@ -52,3 +52,25 @@ class SchemaUpgradeTests(unittest.TestCase):
             upgrade_sqlite(c)
             row=c.execute('SELECT message,quantity,customer_contact,reply_consent_at FROM requests').fetchone()
             self.assertEqual(row,('Historical synthetic request',None,None,None))
+
+
+def test_remote_runtime_requires_verified_tls_before_connecting():
+    from storage import verify_postgres
+    import pytest
+    for url in ('postgresql://runtime@db.example.invalid/scene',
+                'postgresql://runtime@db.example.invalid/scene?sslmode=require',
+                'postgresql://runtime@localhost/scene?host=db.example.invalid',
+                'postgresql://runtime@localhost/scene?hostaddr=192.0.2.1'):
+        with pytest.raises(RuntimeError, match='verify-full'):
+            verify_postgres(url)
+
+
+def test_sqlite_security_upgrade_preserves_legacy_sessions():
+    import sqlite3
+    from security_schema import upgrade_sqlite
+    with sqlite3.connect(':memory:') as c:
+        c.executescript("CREATE TABLE users(id INTEGER PRIMARY KEY); CREATE TABLE businesses(id INTEGER PRIMARY KEY); CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,user_id INTEGER,csrf TEXT,expires_at INTEGER);")
+        c.execute("INSERT INTO sessions VALUES('synthetic-session',1,'synthetic-csrf',2000000000)")
+        upgrade_sqlite(c)
+        upgrade_sqlite(c)
+        assert c.execute('SELECT * FROM sessions').fetchone() == ('synthetic-session',1,'synthetic-csrf',2000000000,None)

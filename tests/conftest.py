@@ -30,6 +30,10 @@ def sqlite_snapshot(tmp_path):
         c.execute('INSERT INTO scans VALUES(1,1,1,1)')
         from request_schema import upgrade_sqlite
         upgrade_sqlite(c)
+        from security_schema import upgrade_sqlite as upgrade_security
+        upgrade_security(c)
+        from backend_schema import upgrade as upgrade_backend
+        upgrade_backend(c, sqlite=True)
     return source
 
 
@@ -112,3 +116,24 @@ def api_postgres_backend():
         with connect(url) as raw:
             raw.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(name)))
             raw.execute(sql.SQL('DROP ROLE {}').format(sql.Identifier(role)))
+
+
+@pytest.fixture(autouse=True)
+def reset_durable_limits():
+    # Test-only reset; no production code or externally configured database is used.
+    import sys
+    server = sys.modules.get('server')
+    if server is not None:
+        with server.db() as c:
+            c.execute('DELETE FROM rate_buckets')
+    yield
+
+
+def pytest_configure(config):
+    import os
+    from urllib.parse import urlsplit
+    url=os.getenv('SCENE_TEST_POSTGRES_URL')
+    if url:
+        parsed=urlsplit(url)
+        if parsed.hostname not in ('localhost','127.0.0.1','::1',None) or not parsed.path.lstrip('/').startswith('scene_test'):
+            raise pytest.UsageError('Disposable PostgreSQL tests require a local database named scene_test*')

@@ -158,3 +158,42 @@ are tracked above; Supabase identity/backup are still unverified.
   38 Python, 24 JS, eight PostgreSQL security/migration, 32 PostgreSQL API, ten
   Chromium workflows and expanded container/restart checks verified.
 - [x] Publish final evidence/report; launch remains FAIL with explicit unfinished gates.
+
+## Secure PostgreSQL/Supabase preparation — 2026-10-22
+
+- [x] Read connection, migration, security, storage, authentication and test code.
+- [x] Establish baseline: existing venv, sandbox timer; 38 passed, 18 skipped.
+- [ ] Verify additive version 3 migration/import and expanded tenant RLS in disposable CI PostgreSQL.
+- [x] Verify managed-auth negative tests, session revocation and private audit records: final local suite 43 passed; 19 PostgreSQL/browser checks skipped.
+- [ ] Publish verified development source to qr-overnight-build and inspect CI.
+- [ ] Hosted backup/restore drill and restricted-role credential provisioning.
+- [ ] Approve/provision managed identities, signup/invite onboarding and recovery UI.
+- [ ] Verify hosted email confirmation, delivery and password recovery in staging.
+
+See SECURITY_INTEGRATION_REPORT.md for the exact integration boundary.
+
+Security preparation final local follow-up: 11 managed-auth/storage checks passed;
+this includes two added SQLite preservation/TLS regressions. Version 3 migration
+and RLS tests exist but remain unexecuted without PostgreSQL/CI. Publication is
+blocked by GitHub connector transport failure and Git DNS resolution failure.
+No hosted production changes occurred. See SECURITY_INTEGRATION_REPORT.md.
+
+## Complete backend mission — 2026-10-22
+
+- [x] Inspect repository, latest local/remote commit, required documents and baseline.
+  Baseline: 45 passed, 19 skipped; default Python lacks pytest; reused existing venv.
+- [x] Reverify Supabase read-only: expected project healthy, us-east-1, public tables
+  empty; security advisor no findings (does not validate absent app schema).
+- [x] Implement managed registration/verification/onboarding/recovery, revocation
+  before external password updates, managed invite acceptance and logout-all.
+- [x] Implement additive v4 schema, locations, QR content/destinations, guest sessions,
+  durable rate limits, consent-backed customers/redaction, reporting and audit events.
+- [x] Implement Stripe test-mode checkout/portal, signature verification, transactional
+  dedupe, canonical subscription reconciliation and server-side request entitlements.
+- [x] Implement invitation outbox, explicit/dry-run worker, bounded retries, revoked
+  invitation checks, production env validation, readiness and redacted request logs.
+- [ ] Complete final unit/API/contracts/concurrency checks and disposable PostgreSQL CI.
+- [ ] Publish logical batches and verify remote tree plus all CI jobs.
+- [ ] Hosted restore/security/TLS/SMTP/Stripe staging acceptance and deployment approval.
+
+See BACKEND_COMPLETION_REPORT.md for evidence, limitations and release decision.

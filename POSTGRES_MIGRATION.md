@@ -74,3 +74,48 @@ PostgreSQL startup fails until RLS and version 2 are present. Do not apply this 
 an unidentified Supabase project. Verify the disposable PostgreSQL suite and API
 parity before a hosted migration. All 8 database and 24 PostgreSQL API checks passed
 on source 4c18454 in GitHub CI; no hosted migration or restore drill was performed.
+
+## Version 3 security preparation — 2026-10-22
+
+Version 3 is additive: `sessions.managed_token`, `auth_identities` and
+`audit_events`. The Python migration sequence is transactional and repeatable;
+version 1 and 2 data is retained. The importer includes security tables when
+present in the SQLite backup, and accepts older snapshots without them.
+SQLite independently adds the same optional schema without changing beta auth.
+The development down script drops these tables too; it is still destructive,
+never a production rollback strategy.
+
+Re-run reviewed restricted-role grants for the two new tables, then hardening,
+after migration and before runtime startup. Hardening restricts products,
+stations, scans, invitations, requests and audit events by transaction-local
+business ID. QR/invitation resolution has SELECT-only token capabilities;
+receipt resolution remains SELECT-only. Scope never persists across transactions.
+Identity bindings are SELECT-only for runtime; audit records allow SELECT/INSERT,
+with UPDATE/DELETE/TRUNCATE revoked. Migrations, bindings, privileges and runtime
+credentials belong to different responsibilities; never use owner credentials in
+SCENE_DATABASE_URL. Users, businesses, memberships, sessions and migration metadata
+still require trusted backend-wide operations and server authorization. This is
+backend RLS defense in depth, not authorization for a browser to connect directly.
+
+No hosted migration has been performed. See SECURITY_INTEGRATION_REPORT.md for
+managed auth limitations and required cutover evidence.
+
+## Version 4 backend integration
+
+The current schema version is **4**. Upgrades from 1/2/3 are transactional and add
+locations, customers, guest sessions, durable rate buckets, verification flows,
+revocation cutoffs, billing state/events and invitation outbox. Station content/
+destination/location fields, addressed invites, recovery-session purpose and
+request customer associations are additive. New records use opaque text IDs.
+PostgreSQL composite foreign keys reject cross-tenant station/location,
+request/customer, guest/station and outbox/invitation references. The importer
+orders new parent tables before dependent rows and requires every application
+table to be empty, including optional v4 tables absent from an old source.
+
+Grant the reviewed restricted backend role SELECT/INSERT/UPDATE/DELETE on new
+application tables (audit UPDATE/DELETE and identity UPDATE/DELETE are revoked
+by hardening), then run hardening as the migration administrator. Never grant
+runtime schema ownership, CREATE, role membership with owner powers, SUPERUSER,
+BYPASSRLS or production owner credentials. Startup requires all expected RLS
+flags and schema version 4. No migration runs automatically at PostgreSQL startup.
+Do not run the development down script against retained business data.

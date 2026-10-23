@@ -244,3 +244,19 @@ storage is available; acknowledging the staff check never automatically resends.
 Do not resend items staff already received. This is not an offline queue or an
 exactly-once delivery guarantee. Private receipt history still requires the
 successful original response and remains limited to the current browser tab.
+
+### Backend integration update (2026-10-22)
+
+The backend now includes additive schema v4, managed Auth registration and
+verification/recovery APIs with owner onboarding, addressed invitations and a
+retryable outbox, organizations/locations, configurable QR content, guest sessions,
+consent-backed customers, reporting, audit history, durable rate limits, readiness
+checks and Stripe **test-mode** subscriptions/webhooks/entitlements. Existing
+SQLite/local-auth beta workflows remain supported. Historical sections above
+describe earlier milestones; use [BACKEND_COMPLETION_REPORT.md](BACKEND_COMPLETION_REPORT.md)
+for the current integration boundary and verification evidence.
+
+These features do not mean the empty hosted Supabase project has been migrated.
+Staging provider checks, backup/restore and credential verification, reviewed
+commercial plans and deployment authorization remain required. No real charges,
+customer messages, hosted migrations or deployment were performed.

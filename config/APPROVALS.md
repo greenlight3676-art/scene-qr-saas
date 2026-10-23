@@ -54,3 +54,22 @@ project identity and backup. This batch uses the existing schema and local/CI da
 - Destination: `greenlight3676-art/scene-qr-saas`, `qr-overnight-build` only.
 - Scope: development code, test/CI evidence and documentation; no force push,
   production deployment, hosted database changes, purchases or external messages.
+
+## 2026-10-22 — PostgreSQL/Supabase integration preparation
+
+Owner explicitly requests secure integration development, local disposable migration
+rehearsals, tests and automatic verified pushes to
+`greenlight3676-art/scene-qr-saas`, branch `qr-overnight-build`.
+Scope excludes hosted migrations and production data changes until backup,
+recovery, credential and migration safety verification. No email sends, package
+installation, production deployment or production identity binding performed.
+
+## 2026-10-22 — Complete backend development mission
+
+Owner explicitly authorizes autonomous backend implementation, synthetic local/
+disposable tests, debugging, documentation, logical commits, GitHub connectivity
+diagnosis and publication to `greenlight3676-art/scene-qr-saas` on
+`qr-overnight-build`. Read-only Supabase inspection of `cwehqnziwabvnzviaqlf`
+is within scope. No production writes/migrations, deployment, spending, real
+charges, external customer messages, recurring workers or installations were
+performed or authorized by this development instruction.
