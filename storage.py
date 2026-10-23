@@ -16,7 +16,7 @@ def connect(url):
         raise RuntimeError('SCENE_DATABASE_URL must be a PostgreSQL URL')
     import psycopg
     from psycopg.rows import dict_row
-    return psycopg.connect(url, row_factory=dict_row, connect_timeout=10)
+    return psycopg.connect(url, row_factory=dict_row, connect_timeout=10, prepare_threshold=None)
 
 
 class Row(dict):

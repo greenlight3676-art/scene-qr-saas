@@ -11,6 +11,7 @@ pytestmark = pytest.mark.skipif(not URL, reason='Disposable PostgreSQL URL not c
 def test_postgres_migration_adapter_and_tenant_constraints():
     import psycopg
     with connect(URL) as raw:
+        assert raw.prepare_threshold is None  # Supavisor transaction-pooler compatibility.
         # Isolated schema, rolled back after test including all fixtures.
         try:
             raw.execute('CREATE SCHEMA scene_test')

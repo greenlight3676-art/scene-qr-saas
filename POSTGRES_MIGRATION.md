@@ -119,3 +119,9 @@ runtime schema ownership, CREATE, role membership with owner powers, SUPERUSER,
 BYPASSRLS or production owner credentials. Startup requires all expected RLS
 flags and schema version 4. No migration runs automatically at PostgreSQL startup.
 Do not run the development down script against retained business data.
+
+The Psycopg adapter disables automatic prepared statements (`prepare_threshold=None`)
+for Supavisor transaction-pooler compatibility. Tenant/receipt/capability settings
+are transaction-local, never session-persistent. Use a verified direct/session
+connection for migration/restore administration; validate the actual runtime
+pooler/TLS configuration in staging before cutover.

@@ -187,3 +187,21 @@ The final recovery/UI/legacy-migration follow-up passed **64 local Python tests,
 21 skipped** (11 separate PostgreSQL and 10 browser cases). Python compilation,
 JavaScript syntax, frontend runner and whitespace checks passed. Provider responses
 remain synthetic; no real email, hosted Auth user or Stripe subscription was created.
+
+The prior successful database CI used PostgreSQL 16. The CI service is now being
+aligned to PostgreSQL **17**, matching the hosted project's major version; the
+dump/restore drill uses that service's own tools. PostgreSQL 16 compatibility is
+already demonstrated, while the final PostgreSQL 17 outcome is recorded below.
+
+Supavisor compatibility: Psycopg automatic prepared statements are disabled with
+`prepare_threshold=None`, following current Supabase transaction-pooler guidance:
+https://supabase.com/docs/guides/troubleshooting/disabling-prepared-statements-qL8lEL
+(accessed 2026-10-22; supports the pooler compatibility setting). Transaction-local
+RLS context remains unchanged. The database integration test checks the actual
+connection configuration. Hosted pooler/TLS acceptance is still a staging gate.
+
+Source `232d2b2` also passed all four jobs in
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/39894113861,
+including the final recovery, dual-proof migration and existing UI compatibility
+changes. The last compatibility batch targets PostgreSQL 17 and disables automatic
+prepared statements; final target-version CI evidence follows below.
