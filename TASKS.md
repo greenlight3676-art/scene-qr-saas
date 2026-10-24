@@ -207,7 +207,9 @@ See BACKEND_COMPLETION_REPORT.md for evidence, limitations and release decision.
 - [x] Establish local baseline: 64 passed, 21 skipped; JavaScript syntax passed.
 - [x] Fix bound-identity email-flow verification, webhook worker execution and
   malformed payload/retry handling, and report integer bounds; add regressions.
-- [ ] Finish relevant local/isolated PostgreSQL CI checks and publish verified source.
+- [x] Publish source 704911b with exact tree match; all four CI jobs passed in
+  run 40068688294. Local/CI Python: 70 passed, 21 skipped; PostgreSQL: 11 database
+  checks and 58 API checks passed (one SQLite-only skip); browser: 10 passed.
 - [ ] Credentialed connection, real Auth/email and Stripe provider acceptance.
 
 No credentials were provisioned and no provider checks are represented as passed

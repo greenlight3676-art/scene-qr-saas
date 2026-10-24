@@ -43,7 +43,32 @@ or hosted write was attempted, and no emails or charges were initiated.
 
 Baseline: 64 local Python tests passed; 21 skipped (11 PostgreSQL and 10 browser
 cases require separate CI jobs). Existing JavaScript syntax passed. Final local
-and CI results for this follow-up are recorded after execution below.
+and CI results for this follow-up:
+
+| Check | Verified outcome |
+| --- | --- |
+| Local complete Python suite | 70 passed, 21 skipped |
+| CI complete Python suite | 70 passed, 21 skipped |
+| PostgreSQL 17 migration/RLS/import/actual disposable dump→restore | 11 passed |
+| Restricted-role PostgreSQL API/auth/billing contracts | 58 passed, one SQLite-only trigger case skipped |
+| Founder lifecycle | One passed on each SQLite/PostgreSQL backend; overlaps broader suites |
+| Frontend regression suite (unchanged frontend) | 24 passed |
+| Chromium guest/staff workflows | 10 passed |
+| Container | Build/startup/readiness and persistence after restart passed |
+| Compilation, JavaScript syntax, whitespace | Passed |
+
+Verified source **704911b5003998a4e83c8d73a48a43c2044230c8** is pushed to
+`qr-overnight-build` with an exact local/remote tree match. All four CI jobs passed
+in [run 40068688294](https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/40068688294).
+No final test failures. The 21 local/application-job skips are the 11 PostgreSQL
+and 10 browser cases passed in separate jobs. An existing TestClient dependency
+deprecation warning remains; no package installation was attempted. Current process
+configuration contains none of the runtime DB, Supabase publishable, Resend or
+Stripe credentials. Hosted metadata/SQL records, disposable database tests and
+synthetic provider tests are separate evidence; **real provider and runtime
+connection acceptance remains blocked**, as listed above. Final documentation
+publication changes no executable code. No frontend, deployment configuration or
+archived Supabase migration/verification SQL was modified.
 
 References reviewed: [Supabase email templates](https://supabase.com/docs/guides/auth/auth-email-templates)
 defines OTP/token-hash proofs used by these flows. Provider settings were not
