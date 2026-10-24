@@ -46,7 +46,7 @@ function guestApp(industry, fetch, nodes={}) {
   });
   vm.runInContext(source.slice(0, start) + `
     renderGuest=()=>{};toast=()=>{};beginGuestStatusPolling=()=>{};
-    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations,loadBusiness};
+    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations,loadBusiness,onBrand,requestCard};
   })();`, context);
   const app = context.guestTest;
   app.storage=storage;app.context=context;
@@ -325,4 +325,24 @@ test('revoked access immediately clears cached private workspace data',async()=>
   assert.equal(app.state.requestPage,null);
   assert.equal(app.state.inviteUrl,'');
   assert.match(content.textContent,/access|sign in/i);
+});
+
+
+test('business accents retain readable header contrast',()=>{
+  const app=guestApp('restaurant',async()=>{});
+  const luminance=hex=>hex.slice(1).match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
+  for(const color of ['#000000','#ffffff','#777777','#808080','#ff0000','#00ff00','#0000ff','#c28f5a']){
+    const a=luminance(color),b=luminance(app.onBrand(color));
+    assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,color);
+  }
+});
+
+test('service tickets expose one next action and a textual status',()=>{
+  const app=guestApp('restaurant',async()=>{});app.state.business={role:'owner'};
+  const ticket={id:12,station:'Table <01>',kind:'service',message:'Call server',created_at:1700000000};
+  const start=app.requestCard({...ticket,status:'open'});
+  assert.match(start,/data-next-status="in_progress"/);assert.match(start,/>Start<\/button>/);
+  assert.ok(!start.includes('<select'));assert.ok(start.includes('Table &lt;01&gt;'));
+  assert.match(app.requestCard({...ticket,status:'in_progress'}),/>Mark done<\/button>/);
+  assert.ok(!app.requestCard({...ticket,status:'completed'}).includes('data-next-status'));
 });

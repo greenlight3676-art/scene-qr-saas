@@ -128,7 +128,6 @@ def test_mobile_inquiries_receipts_and_owner_team_controls(local_site, width):
             phone.locator('[data-add]').nth(1).click()
             phone.locator('[data-send-cart]').click()
             expect(phone.locator('[data-receipt-id]')).to_have_count(2)
-            phone.locator('[data-kind="question"]').click()
             phone.locator('#questionDetails summary').click()
             phone.locator('#guestNote').fill('Synthetic inquiry for browser verification')
             phone.locator('#guestName').fill('Sample Guest')
@@ -305,6 +304,7 @@ def test_catalog_edit_station_pause_and_selection_notes(local_site,width):
             dashboard.locator('#mainNav [data-screen="stations"]').click()
             settings=dashboard.locator(f'[data-station-form="{station["id"]}"]')
             station_card=dashboard.locator('.qr-card').filter(has=settings)
+            station_card.locator('summary').click()
             settings.locator('[name="label"]').fill('Renamed synthetic reception')
             settings.locator('[name="active"]').uncheck()
             settings.get_by_role('button',name='Save location').click()
@@ -312,11 +312,12 @@ def test_catalog_edit_station_pause_and_selection_notes(local_site,width):
             assert owner.request.get('/api/admin/'+slug).json()['stations'][0]['token']==token
             phone.reload()
             expect(phone.locator('.loading-phone')).to_contain_text('QR location is unavailable')
+            station_card.locator('summary').click()
             settings.locator('[name="active"]').check()
             settings.get_by_role('button',name='Save location').click()
             expect(station_card.locator('.qr-image')).to_be_visible()
             phone.reload()
-            expect(phone.locator('.guest-spot')).to_contain_text('Renamed synthetic reception')
+            expect(phone.locator('.spot')).to_contain_text('Renamed synthetic reception')
             expect(phone.locator('.guest-product')).to_contain_text('Synthetic updated service')
             expect(phone.locator('[data-receipt-id]')).to_have_count(1)
             dashboard.locator('#mobileMenu').click()
@@ -356,7 +357,7 @@ def test_founder_browser_signup_lost_response_and_refresh(local_site, tmp_path):
             token = board['stations'][0]['token']
             phone = guest.new_page()
             phone.goto('/q/' + token)
-            expect(phone.locator('.guest-spot')).to_contain_text('Front Desk')
+            expect(phone.locator('.spot')).to_contain_text('Front Desk')
 
             # Commit the POST on the actual local server, then lose its response.
             def lose_response(route):
