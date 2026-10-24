@@ -55,7 +55,7 @@ document.querySelector('#recover-form').addEventListener('submit',async event=>{
     await post('/api/auth/recover',{email:document.querySelector('#recover-email').value.trim()});
     document.querySelector('#recover-form').hidden=true;
     document.querySelector('#verify-form').hidden=false;
-    statusNode.textContent='If eligible, check your email and enter the code in this browser.';
+    statusNode.textContent='If eligible, check your email. Open its link, or enter a code here if one was provided.';
   } catch(error) {statusNode.textContent=error.message;}
 });
 
