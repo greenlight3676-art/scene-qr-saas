@@ -1,5 +1,6 @@
 'use strict';
 const statusNode = document.querySelector('#status');
+const pageOptions = new URLSearchParams(location.search);
 const fragment = new URLSearchParams(location.hash.slice(1));
 const tokenHash = fragment.get('token_hash');
 history.replaceState(null, '', location.pathname);
@@ -35,7 +36,7 @@ document.querySelector('#password-form').addEventListener('submit', async event 
   } catch (error) { statusNode.textContent = error.message; }
 });
 
-if(new URLSearchParams(location.search).has('recover')) {
+if(pageOptions.has('recover')) {
   document.querySelector('#recover-form').hidden=false;
   document.querySelector('#verify-form').hidden=true;
 }
@@ -49,7 +50,7 @@ document.querySelector('#recover-form').addEventListener('submit',async event=>{
   } catch(error) {statusNode.textContent=error.message;}
 });
 
-if(new URLSearchParams(location.search).has('onboard')) {
+if(pageOptions.has('onboard')) {
   document.querySelector('#onboard-form').hidden=false;
   document.querySelector('#verify-form').hidden=true;
   statusNode.textContent='Finish setting up your verified account.';

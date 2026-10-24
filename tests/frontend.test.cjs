@@ -5,6 +5,33 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {webcrypto} = require('node:crypto');
 
+function authPage(search) {
+  const nodes=new Map();
+  const location={search,hash:'#token_hash=synthetic-test-token',pathname:'/auth/confirm'};
+  const context=vm.createContext({URLSearchParams,location,
+    history:{replaceState:()=>{location.search='';location.hash='';}},
+    document:{querySelector:selector=>{
+      if(!nodes.has(selector))nodes.set(selector,{hidden:selector!=='#verify-form',required:true,addEventListener(){}});
+      return nodes.get(selector);
+    }}
+  });
+  vm.runInContext(fs.readFileSync('static/auth.js','utf8'),context);
+  return {nodes,location};
+}
+
+test('password recovery opens its form after sensitive URL data is removed',()=>{
+  const {nodes,location}=authPage('?recover=1');
+  assert.equal(nodes.get('#recover-form').hidden,false);
+  assert.equal(nodes.get('#verify-form').hidden,true);
+  assert.equal(location.search,'');assert.equal(location.hash,'');
+});
+
+test('verified account setup opens its form after URL cleanup',()=>{
+  const {nodes}=authPage('?onboard=1');
+  assert.equal(nodes.get('#onboard-form').hidden,false);
+  assert.equal(nodes.get('#verify-form').hidden,true);
+});
+
 function guestApp(industry, fetch, nodes={}) {
   const source = fs.readFileSync('static/app.js', 'utf8');
   const start = source.lastIndexOf(' initialize().catch(');
