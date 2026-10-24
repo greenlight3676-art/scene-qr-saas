@@ -75,7 +75,7 @@ def test_mobile_guest_to_dashboard_request(local_site, width, tmp_path):
             dashboard.locator('#mainNav [data-screen="requests"]').click()
             expect(dashboard.locator('#sidebarCurtain')).to_be_hidden()
             dashboard.locator('[data-action="refresh"]').click()
-            control = dashboard.locator('[data-status-id]').first
+            control = dashboard.locator('[data-next-status]').first
             expect(control).to_be_visible()
             control.scroll_into_view_if_needed()
             box = control.bounding_box()
@@ -83,8 +83,9 @@ def test_mobile_guest_to_dashboard_request(local_site, width, tmp_path):
             assert box['x'] >= 0 and box['x'] + box['width'] <= width + 1
             for page in (dashboard, phone):
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
-            control.select_option('completed')
-            expect(dashboard.locator('.request-card').first).to_contain_text('COMPLETED')
+            control.click()
+            dashboard.locator('[data-next-status="completed"]').first.click()
+            expect(dashboard.locator('.request-card').first).to_contain_text('Done')
             expect(phone.locator('#receiptState')).to_have_text('Done', timeout=12000)
             assert not errors, errors
             dashboard.screenshot(path=str(tmp_path / f'dashboard-{width}.png'), full_page=True)
@@ -162,10 +163,8 @@ def test_mobile_inquiries_receipts_and_owner_team_controls(local_site, width):
             dashboard.locator('[data-lead-id]').select_option('qualified')
             expect(dashboard.locator('[data-lead-id]')).to_have_value('qualified')
             dashboard.locator('#requestLead').select_option('qualified')
-            dashboard.locator('#requestSearchForm button[type="submit"]').click()
             expect(dashboard.locator('.request-card')).to_have_count(1)
             dashboard.locator('#requestLead').select_option('closed')
-            dashboard.locator('#requestSearchForm button[type="submit"]').click()
             expect(dashboard.locator('.request-card')).to_have_count(0)
             dashboard.locator('#clearRequestFilters').click()
             expect(dashboard.locator('.request-card')).to_have_count(3)
@@ -223,17 +222,14 @@ def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tm
             dashboard.locator('#mobileMenu').click()
             dashboard.locator('#mainNav [data-screen="requests"]').click()
             expect(dashboard.locator('.request-card')).to_have_count(25)
-            dashboard.locator('#nextRequests').click()
-            expect(dashboard.locator('.request-card')).to_have_count(7)
+            dashboard.locator('#requestSentinel').scroll_into_view_if_needed()
+            expect(dashboard.locator('.request-card')).to_have_count(32)
             expect(dashboard.locator('.request-list')).to_contain_text('Oldest synthetic inquiry')
-            dashboard.locator('#previousRequests').click()
-            expect(dashboard.locator('.request-card')).to_have_count(25)
             dashboard.locator('#requestSearch').fill('oldest')
             dashboard.locator('#requestKind').select_option('question')
-            dashboard.locator('#requestSearchForm button[type="submit"]').click()
             expect(dashboard.locator('.request-card')).to_have_count(1)
             expect(dashboard.locator('.request-list')).to_contain_text('Oldest synthetic inquiry')
-            expect(dashboard.locator('#nextRequests')).to_be_disabled()
+            expect(dashboard.locator('#nextRequests')).to_be_hidden()
             dashboard.locator('#requestSearch').fill('Unsubmitted draft filter')
             dashboard.locator('#clearRequestFilters').click()
             expect(dashboard.locator('#requestSearch')).to_have_value('')
@@ -246,10 +242,9 @@ def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tm
             expect(dashboard.locator('[data-revoke-invite]')).to_have_count(0)
             dashboard.locator('#mobileMenu').click()
             dashboard.locator('#mainNav [data-screen="settings"]').click()
-            save=dashboard.locator('#settingsForm button[type="submit"]')
             with dashboard.expect_response(lambda response:response.request.method=='PATCH' and response.url.endswith('/settings')):
-                save.click()
-            expect(save).to_be_enabled()
+                dashboard.locator('#settingTag').fill('Autosave browser acceptance')
+            expect(dashboard.locator('#brandSaveStatus')).to_have_text('All changes saved.')
             for page in (dashboard,phone):
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
             assert not errors,errors
