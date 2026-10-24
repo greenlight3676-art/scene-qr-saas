@@ -49,3 +49,6 @@ When changing frontend layout, flows, copy, animation, accessibility, or prepari
 - `inclusive-responsive-frontend`: accessibility, mobile, internationalization and performance.
 - `premium-release-audit`: interactive QA before demos or client handoff.
 Keep these skills subordinate to the security rules, working functionality, test requirements, and no-unauthorized-deployment constraints above.
+
+## Lundy shared design standard
+For any Scene QR frontend work, read `design/LUNDY_DESIGN_SYSTEM.md` and `design/SCENE_QR_DESIGN_ROLLOUT.md` before significant changes. Apply `.agents/skills/lundy-design-system/SKILL.md` alongside the five task-specific skills above. Use one reviewable vertical slice at a time: guest QR journey first, dashboard second, onboarding third, polish and release audit last. Cross-project reuse means rules and skills, **not** brand cloning, tenant data, or backend code. Never override repository security/test/deployment guardrails with a visual-design requirement.
