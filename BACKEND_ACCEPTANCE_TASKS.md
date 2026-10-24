@@ -27,6 +27,9 @@ on the existing role after recovery prerequisites are met. Save it directly to
 the owner's chosen private secret destination. Never use the postgres owner for
 runtime. Obtain the exact connection details from the project's Connect panel.
 Then run the read-only check above. No role or password was changed in this run.
+Direct DNS checks for both the project database and Auth hosts also failed in
+this sandbox. Run actual credentialed checks from a permitted private environment
+with working network access; connected admin metadata access is a separate path.
 
 ## 2. Auth configuration and email templates
 
@@ -114,3 +117,13 @@ Sources reviewed:
   direct/session-mode dump connection guidance, accessed 2026-10-24.
 - https://supabase.com/docs/guides/auth/auth-email-templates — OTP template
   variables and template configuration, accessed during the preceding review.
+
+Published preparation source: `aefe340633302e9506ce209901053c3eb0769bd7`.
+All four CI jobs passed in
+https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/40073097092:
+79 application Python tests passed, 21 intentional PostgreSQL/browser skips;
+11 disposable PostgreSQL migration/security/restore checks passed; 59 restricted
+PostgreSQL API checks passed, two SQLite-only checks skipped; 24 frontend tests
+passed; 10 browser workflows passed; container build/readiness/restart passed.
+No final failures. These results do not remove the live acceptance blockers above.
+The final evidence update changes documentation only.
