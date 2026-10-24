@@ -70,7 +70,7 @@ def test_mobile_guest_to_dashboard_request(local_site, width, tmp_path):
             expect(dashboard.locator('#appShell')).to_be_visible()
             phone.goto('/?q=' + token)
             phone.locator('[data-kind="service"]').click()
-            expect(phone.locator('#receiptState')).to_have_text('open')
+            expect(phone.locator('#receiptState')).to_have_text('New')
             dashboard.locator('#mobileMenu').click()
             dashboard.locator('#mainNav [data-screen="requests"]').click()
             expect(dashboard.locator('#sidebarCurtain')).to_be_hidden()
@@ -85,7 +85,7 @@ def test_mobile_guest_to_dashboard_request(local_site, width, tmp_path):
                 assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
             control.select_option('completed')
             expect(dashboard.locator('.request-card').first).to_contain_text('COMPLETED')
-            expect(phone.locator('#receiptState')).to_have_text('completed', timeout=12000)
+            expect(phone.locator('#receiptState')).to_have_text('Done', timeout=12000)
             assert not errors, errors
             dashboard.screenshot(path=str(tmp_path / f'dashboard-{width}.png'), full_page=True)
             phone.screenshot(path=str(tmp_path / f'guest-{width}.png'), full_page=True)
@@ -128,6 +128,7 @@ def test_mobile_inquiries_receipts_and_owner_team_controls(local_site, width):
             phone.locator('[data-send-cart]').click()
             expect(phone.locator('[data-receipt-id]')).to_have_count(2)
             phone.locator('[data-kind="question"]').click()
+            phone.locator('#questionDetails summary').click()
             phone.locator('#guestNote').fill('Synthetic inquiry for browser verification')
             phone.locator('#guestName').fill('Sample Guest')
             phone.locator('#guestContact').fill('guest@example.invalid')
@@ -187,7 +188,7 @@ def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tm
             assert result.ok
             slug=result.json()['slug'];csrf={'x-scene-csrf':owner.request.get('/api/me').json()['csrf']}
             board=owner.request.get('/api/admin/'+slug).json();token=board['stations'][0]['token']
-            for name,category in [('Sample wax','Detailing'),('Sample seats','Care')]:
+            for name,category in [('Sample wax','Detailing'),('Sample seats','Care')]+[(f'Example item {i}','Detailing') for i in range(5)]:
                 assert owner.request.post(f'/api/admin/{slug}/products',headers=csrf,data={'name':name,'category':category,'price_cents':125}).ok
             # Synthetic history seeded only in this test's disposable SQLite DB.
             with sqlite3.connect(tmp_path/'browser.sqlite') as c:
@@ -198,6 +199,7 @@ def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tm
             errors=[]
             for page in (phone,dashboard):page.on('pageerror',lambda error:errors.append(str(error)))
             phone.goto('/?q='+token)
+            phone.locator('#questionDetails summary').click()
             phone.locator('#guestNote').fill('Please keep this draft')
             phone.locator('#guestContact').fill('sample@example.invalid')
             phone.locator('#guestConsent').check()
@@ -209,7 +211,7 @@ def test_full_history_catalog_quantity_and_invite_revocation(local_site,width,tm
             phone.get_by_role('button',name='Increase Sample wax quantity').click()
             expect(phone.locator('.cart-line')).to_contain_text('2 × Sample wax')
             phone.locator('#guestSearch').fill('')
-            phone.locator('#guestCategory').select_option('Care')
+            phone.get_by_role('button',name='Care',exact=True).click()
             expect(phone.locator('.guest-product:visible')).to_have_count(1)
             expect(phone.locator('.guest-product:visible')).to_contain_text('Sample seats')
             phone.locator('[data-send-cart]').click()
@@ -382,6 +384,7 @@ def test_founder_browser_signup_lost_response_and_refresh(local_site, tmp_path):
             phone.on('dialog', lambda dialog: dialog.accept())
             phone.locator('#resolveUncertain').click()
             expect(phone.locator('#resolveUncertain')).to_have_count(0)
+            phone.locator('#questionDetails summary').click()
             phone.locator('#guestNote').fill('Synthetic follow-up after staff check')
             phone.locator('#guestMessageForm button[type="submit"]').click()
             expect(phone.locator('[data-receipt-id]')).to_have_count(1)
