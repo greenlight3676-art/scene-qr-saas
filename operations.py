@@ -35,8 +35,11 @@ def validate_environment():
         raise RuntimeError('Production requires explicit trusted hosts including the public hostname')
     if os.getenv('SCENE_REQUIRE_GUEST_SESSION') != '1':
         raise RuntimeError('Production requires guest session enforcement')
-    # Do not silently expose a backend without subscription enforcement.
-    if os.getenv('SCENE_REQUIRE_SUBSCRIPTION') != '1':
+    # A no-billing pilot must be explicitly enabled; retain every security gate.
+    pilot = os.getenv('SCENE_PILOT_WITHOUT_BILLING', '0')
+    if pilot not in ('0', '1'):
+        raise RuntimeError('Unsupported no-billing pilot setting')
+    if os.getenv('SCENE_REQUIRE_SUBSCRIPTION') != '1' and pilot != '1':
         raise RuntimeError('Production requires subscription enforcement')
 
 

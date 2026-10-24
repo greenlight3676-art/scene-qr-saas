@@ -18,6 +18,20 @@ def test_production_config_fails_closed(monkeypatch):
     monkeypatch.setenv('SCENE_TRUSTED_HOSTS','scene.example.invalid')
     monkeypatch.setenv('SCENE_REQUIRE_GUEST_SESSION','1');monkeypatch.setenv('SCENE_REQUIRE_SUBSCRIPTION','1')
     operations.validate_environment()
+    monkeypatch.delenv('SCENE_PILOT_WITHOUT_BILLING', raising=False)
+    monkeypatch.setenv('SCENE_REQUIRE_SUBSCRIPTION','0')
+    with pytest.raises(RuntimeError,match='subscription enforcement'):
+        operations.validate_environment()
+    monkeypatch.setenv('SCENE_PILOT_WITHOUT_BILLING','1')
+    operations.validate_environment()
+    monkeypatch.setenv('SCENE_REQUIRE_GUEST_SESSION','0')
+    with pytest.raises(RuntimeError,match='guest session enforcement'):
+        operations.validate_environment()
+    monkeypatch.setenv('SCENE_REQUIRE_GUEST_SESSION','1')
+    monkeypatch.setenv('SCENE_PILOT_WITHOUT_BILLING','true')
+    with pytest.raises(RuntimeError,match='no-billing pilot'):
+        operations.validate_environment()
+    monkeypatch.setenv('SCENE_PILOT_WITHOUT_BILLING','1')
     monkeypatch.setenv('SCENE_TRUSTED_HOSTS','*')
     with pytest.raises(RuntimeError,match='trusted hosts'):operations.validate_environment()
 
