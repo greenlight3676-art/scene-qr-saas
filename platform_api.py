@@ -177,7 +177,7 @@ def install(s):
         return {'ok':True,'note':'Structured contact fields redacted; review free-text and backup retention separately.'}
 
     @s.app.get('/api/admin/{slug}/reports')
-    def report(slug: str,request: Request, start: int=Query(default=0,ge=0),end: int=Query(default=9223372036854775807,ge=0)):
+    def report(slug: str,request: Request, start: int=Query(default=0,ge=0,le=9223372036854775807),end: int=Query(default=9223372036854775807,ge=0,le=9223372036854775807)):
         session=s.user_session(request)
         if start>=end:s.fail(400,'Report start must precede end')
         with s.db() as c:

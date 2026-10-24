@@ -129,3 +129,11 @@ def test_concurrent_request_status_transition_has_one_winner():
         return c.patch(f'/api/admin/{slug}/requests/{rid}',json={'status':'completed'},headers=headers).status_code
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert sorted(pool.map(complete,range(2)))==[200,409]
+
+
+def test_report_time_bounds_reject_database_integer_overflow():
+    owner,slug,_,_=account('report-time-bounds')
+    for key in ('start','end'):
+        response=owner.get(f'/api/admin/{slug}/reports?{key}={2**63}')
+        assert response.status_code==422
+    assert owner.get(f'/api/admin/{slug}/reports?start=0&end={2**63-1}').status_code==200

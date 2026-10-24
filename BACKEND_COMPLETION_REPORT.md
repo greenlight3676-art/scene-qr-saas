@@ -1,5 +1,57 @@
 # Scene QR backend completion report
 
+## Current backend-only follow-up — 2026-10-24
+
+Synced branch source `4db17ad038cc01c6ab43fe8fe5a2c68375d7296f` before edits.
+Native Git pull failed DNS; the connected GitHub integration retrieved the latest
+commit/files, verified Git object hashes and the exact tree, then fast-forwarded
+the local branch. The hosted status below supersedes the historical empty-project
+observations in this report.
+
+**Recorded hosted verification:** SUPABASE_CONNECTION.md now records applied
+schema v4, 21 RLS-protected tables, least-privilege NOLOGIN `scene_runtime`, and
+rollback-only tenant isolation/anonymous-denial SQL checks. This follow-up reviewed
+the archived SQL and status; it did not repeat those hosted SQL fixture checks or
+reapply any migration. Fresh read-only connector checks confirmed ACTIVE_HEALTHY,
+PostgreSQL 17.11, the recorded migration entry, 21 public tables with RLS enabled
+and zero security-advisor lints. Table inventory reports only the schema metadata
+row; application tables are empty. These metadata checks do not exercise the
+credentialed application connection. SQLite stays available. No new SQL migration
+is needed for these fixes.
+
+Backend fixes:
+
+- Provider-verified subject/email must match the initiating flow even if that
+  subject already has an identity binding. Mismatched signup/recovery hashes
+  cannot create an organization or issue a session. Revocation is rechecked under
+  the provisioning transaction after the external identity read.
+- Stripe raw-body verification/reconciliation runs in the worker threadpool,
+  keeping blocking database/provider work off the ASGI event loop. Transactional
+  event deduplication and tenant capability scopes remain intact.
+- Invalid signed customer objects and out-of-range timestamps return 400 without
+  consuming the event ID. Malformed canonical subscription responses return 503,
+  roll back projection/dedupe and allow a retry. Report time bounds reject values
+  outside the database's signed 64-bit integer range with 422.
+
+**Credential-blocked checks:** real backend PostgreSQL connection with restricted
+LOGIN credentials and verified TLS/pooler settings; live Supabase signup/email
+verification/login/recovery and session acceptance; SMTP/invitation delivery;
+Stripe test-account checkout/portal/webhook acceptance. Synthetic provider tests
+do not establish these results. Hosted backup/restore, capacity/monitoring and
+privacy acceptance also remain outstanding. No hosting was created, no deployment
+or hosted write was attempted, and no emails or charges were initiated.
+
+Baseline: 64 local Python tests passed; 21 skipped (11 PostgreSQL and 10 browser
+cases require separate CI jobs). Existing JavaScript syntax passed. Final local
+and CI results for this follow-up are recorded after execution below.
+
+References reviewed: [Supabase email templates](https://supabase.com/docs/guides/auth/auth-email-templates)
+defines OTP/token-hash proofs used by these flows. Provider settings were not
+changed. The Supabase changelog markdown fetch failed; no new Supabase API or
+schema feature was introduced.
+
+## Historical implementation and verification — 2026-10-22
+
 Date: 2026-10-22. Local development and isolated tests only. No production data,
 hosted schema, paid resources, customer messages, real Stripe charges or deployment
 were changed. SQLite beta stays the default; new tables/columns are additive.
@@ -245,3 +297,11 @@ ingress, monitoring, privacy/retention and capacity acceptance remain incomplete
 Live billing remains disabled. A production rollout requires separate approval
 after these gates pass. No hosted migrations, customer messages, real charges or
 deployment were performed, and the working SQLite beta remains available.
+
+Follow-up local result (2026-10-24): **70 passed, 21 skipped** in the complete
+Python suite using the existing venv and documented sandbox asyncio workaround.
+The 11 PostgreSQL and 10 browser cases are intentionally reserved for isolated CI.
+Python compilation, JavaScript syntax and whitespace checks passed. An initial
+new billing fixture reused another test's synthetic subscription ID; corrected
+that fixture, reran all six billing cases successfully, then passed the full suite.
+No failed test remains locally. Provider transports remain injected/synthetic.

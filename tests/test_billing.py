@@ -114,3 +114,41 @@ def test_checkout_is_owner_only_idempotent_and_server_priced(monkeypatch):
     assert owner.post(path,json={'plan':'standard'},headers=headers).status_code==200
     assert received[0][2]==received[1][2]
     assert TestClient(server.app).get(f'/api/admin/{slug}/billing').status_code==401
+
+
+def test_reconciliation_runs_off_event_loop_and_malformed_provider_state_retries(monkeypatch):
+    import asyncio
+    _,_,_,board=fixture(monkeypatch,'webhook-worker-contract')
+    client=TestClient(server.app)
+    worker_event=event(board,'evt_WorkerRetry')
+    worker_event['data']['object']['id']='sub_WorkerRetry'
+    payload,headers=signed(worker_event)
+    def malformed(*args,**kwargs):
+        # A synchronous provider/DB transaction must never run on an ASGI loop.
+        with pytest.raises(RuntimeError):asyncio.get_running_loop()
+        result=subscription(board);result['id']='sub_WorkerRetry'
+        result['items']={'data':{'unexpected':'mapping'}}
+        return result
+    monkeypatch.setattr(billing,'call',malformed)
+    assert client.post('/api/billing/webhook',content=payload,headers=headers).status_code==503
+    with server.db() as c:
+        assert not c.execute('SELECT 1 FROM billing_events WHERE event_id=?',('evt_WorkerRetry',)).fetchone()
+        server.scope(c,'scene.tenant_id',board['id'])
+        assert c.execute('SELECT status FROM billing_accounts WHERE business_id=?',(board['id'],)).fetchone()['status']=='unconfigured'
+    def recovered(*args,**kwargs):
+        result=subscription(board);result['id']='sub_WorkerRetry'
+        return result
+    monkeypatch.setattr(billing,'call',recovered)
+    assert client.post('/api/billing/webhook',content=payload,headers=headers).status_code==200
+
+
+@pytest.mark.parametrize('invalid', ['customer-object','timestamp-overflow'])
+def test_malformed_signed_event_is_rejected_without_consuming_id(monkeypatch,invalid):
+    _,_,_,board=fixture(monkeypatch,'malformed-event-'+invalid)
+    value=event(board,'evt_Invalid'+invalid.replace('-',''))
+    if invalid=='customer-object':value['data']['object']['customer']={'id':'cus_Attacker'}
+    else:value['created']=2**63
+    payload,headers=signed(value)
+    response=TestClient(server.app).post('/api/billing/webhook',content=payload,headers=headers)
+    assert response.status_code==400
+    with server.db() as c:assert not c.execute('SELECT 1 FROM billing_events WHERE event_id=?',(value['id'],)).fetchone()

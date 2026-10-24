@@ -14,6 +14,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, quote, urlsplit
 from urllib.request import Request as URLRequest, build_opener
 from fastapi import Request
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 from managed_auth import NoRedirect
 
@@ -90,6 +91,8 @@ def event_projection(s,c,event):
         customer=obj.get('customer')
     else: return 'ignored'
     if not isinstance(sub_id,str) or not re.fullmatch(r'sub_[A-Za-z0-9]+',sub_id): return 'ignored'
+    if not isinstance(customer,str) or not re.fullmatch(r'cus_[A-Za-z0-9]+', customer):
+        raise ValueError('Invalid event customer')
     account=c.execute('SELECT * FROM billing_accounts WHERE customer_id=?',(customer,)).fetchone()
     if not account: return 'ignored'
     s.scope(c,'scene.tenant_id',account['business_id'])
@@ -97,13 +100,20 @@ def event_projection(s,c,event):
     account=c.execute('SELECT * FROM billing_accounts WHERE business_id=?',(account['business_id'],)).fetchone()
     if account['subscription_id'] not in (None,sub_id) and account['status'] not in ('canceled','incomplete_expired'): return 'ignored'
     subscription=call('subscriptions/'+quote(sub_id,safe=''))
+    if not isinstance(subscription,dict): raise BillingError('Invalid subscription response')
     if subscription.get('id') != sub_id or subscription.get('customer') != customer or subscription.get('livemode') is not False:
         raise BillingError('Subscription identity mismatch')
-    items=subscription.get('items',{}).get('data',[])
-    if len(items)!=1: raise BillingError('Unexpected subscription items')
-    item=items[0];price=(item.get('price') or {}).get('id')
+    collection=subscription.get('items')
+    items=collection.get('data') if isinstance(collection,dict) else None
+    if not isinstance(items,list) or len(items)!=1 or not isinstance(items[0],dict):
+        raise BillingError('Unexpected subscription items')
+    item=items[0]
+    price_data=item.get('price')
+    if not isinstance(price_data,dict) or not isinstance(price_data.get('id'),str):
+        raise BillingError('Invalid subscription price')
+    price=price_data['id']
     end=item.get('current_period_end') or subscription.get('current_period_end') or subscription.get('trial_end') or 0
-    if not isinstance(end,int) or isinstance(end,bool): raise BillingError('Invalid subscription term')
+    if not isinstance(end,int) or isinstance(end,bool) or not 0 <= end <= 9223372036854775807: raise BillingError('Invalid subscription term')
     status=subscription.get('status')
     if status not in ('active','trialing','past_due','unpaid','canceled','incomplete','incomplete_expired','paused'):
         status='unconfigured'
@@ -115,6 +125,34 @@ def event_projection(s,c,event):
     return 'processed'
 
 
+def process_webhook(s, body, signature):
+    try: verify_signature(body, signature)
+    except BillingError:s.fail(503,'Webhook verification is not configured')
+    except ValueError:s.fail(400,'Invalid webhook signature')
+    try:
+        event=json.loads(body)
+        if (not isinstance(event,dict) or not isinstance(event.get('id'),str)
+                or not re.fullmatch(r'evt_[A-Za-z0-9]+',event['id']) or not isinstance(event.get('type'),str)
+                or not isinstance(event.get('created'),int) or isinstance(event.get('created'),bool)
+                or not 0 <= event['created'] <= 9223372036854775807
+                or event.get('livemode') is not False or event.get('account')):
+            raise ValueError()
+        digest=hashlib.sha256(body).hexdigest()
+        with s.db() as c:
+            prior=c.execute('SELECT payload_hash FROM billing_events WHERE event_id=?',(event['id'],)).fetchone()
+            if prior:
+                if prior['payload_hash']!=digest:s.fail(409,'Event identifier reused with a different payload')
+                return {'ok':True,'duplicate':True}
+            # Resolve the public Stripe customer ID using a capability, not broad tenant access.
+            customer=event.get('data',{}).get('object',{}).get('customer')
+            s.scope(c,'scene.billing_customer',customer if isinstance(customer,str) else '')
+            result=event_projection(s,c,event)
+            c.execute('INSERT INTO billing_events VALUES(?,?,?,?,?)',(event['id'],digest,event['type'],event['created'],s.ts()))
+        return {'ok':True,'result':result}
+    except BillingError:s.fail(503,'Subscription reconciliation unavailable; Stripe should retry')
+    except (ValueError,TypeError,KeyError,AttributeError):s.fail(400,'Invalid event payload')
+
+
 class Checkout(BaseModel):
     plan: str=Field(min_length=1,max_length=32)
 
@@ -123,30 +161,7 @@ def install(s):
     @s.app.post('/api/billing/webhook')
     async def webhook(request: Request):
         body=await request.body()
-        try: verify_signature(body,request.headers.get('stripe-signature',''))
-        except BillingError:s.fail(503,'Webhook verification is not configured')
-        except ValueError:s.fail(400,'Invalid webhook signature')
-        try:
-            event=json.loads(body)
-            if (not isinstance(event,dict) or not isinstance(event.get('id'),str)
-                    or not re.fullmatch(r'evt_[A-Za-z0-9]+',event['id']) or not isinstance(event.get('type'),str)
-                    or not isinstance(event.get('created'),int) or isinstance(event.get('created'),bool)
-                    or event.get('livemode') is not False or event.get('account')):
-                raise ValueError()
-            digest=hashlib.sha256(body).hexdigest()
-            with s.db() as c:
-                prior=c.execute('SELECT payload_hash FROM billing_events WHERE event_id=?',(event['id'],)).fetchone()
-                if prior:
-                    if prior['payload_hash']!=digest:s.fail(409,'Event identifier reused with a different payload')
-                    return {'ok':True,'duplicate':True}
-                # Resolve the public Stripe customer ID using a capability, not broad tenant access.
-                customer=event.get('data',{}).get('object',{}).get('customer')
-                s.scope(c,'scene.billing_customer',customer if isinstance(customer,str) else '')
-                result=event_projection(s,c,event)
-                c.execute('INSERT INTO billing_events VALUES(?,?,?,?,?)',(event['id'],digest,event['type'],event['created'],s.ts()))
-            return {'ok':True,'result':result}
-        except BillingError:s.fail(503,'Subscription reconciliation unavailable; Stripe should retry')
-        except (ValueError,TypeError,KeyError,AttributeError):s.fail(400,'Invalid event payload')
+        return await run_in_threadpool(process_webhook, s, body, request.headers.get('stripe-signature',''))
 
     @s.app.get('/api/admin/{slug}/billing')
     def billing_status(slug: str,request: Request):

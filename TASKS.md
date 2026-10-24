@@ -197,3 +197,18 @@ and disposable PostgreSQL rehearsals passed. No hosted production changes occurr
 - [ ] Hosted restore/security/TLS/SMTP/Stripe staging acceptance and deployment approval.
 
 See BACKEND_COMPLETION_REPORT.md for evidence, limitations and release decision.
+
+## Backend-only follow-up — 2026-10-24
+
+- [x] Sync latest qr-overnight-build source 4db17ad with verified Git object/tree
+  hashes through the connected integration after native Git DNS failure.
+- [x] Read hosted v4/RLS applied status and archived SQL; do not reapply initial
+  migration, create hosting, deploy or alter hosted data.
+- [x] Establish local baseline: 64 passed, 21 skipped; JavaScript syntax passed.
+- [x] Fix bound-identity email-flow verification, webhook worker execution and
+  malformed payload/retry handling, and report integer bounds; add regressions.
+- [ ] Finish relevant local/isolated PostgreSQL CI checks and publish verified source.
+- [ ] Credentialed connection, real Auth/email and Stripe provider acceptance.
+
+No credentials were provisioned and no provider checks are represented as passed
+by synthetic tests. Current hosted SQL evidence comes from SUPABASE_CONNECTION.md.

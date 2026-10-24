@@ -60,7 +60,9 @@ def test_managed_session_mapping_revocation_and_recovery(monkeypatch):
     with server.db() as db:
         server.scope(db,'scene.auth_subject',SUBJECT)
         db.execute('INSERT INTO auth_identities(subject,user_id) VALUES(?,?)', (SUBJECT, uid))
-    assert c.post('/api/auth/login', json={'email':'managed-fixture@example.invalid','password':'synthetic'}).status_code == 200
+    with patch.object(managed_auth, 'call', return_value={'id':SUBJECT,
+            'email':'managed-fixture@example.invalid','email_confirmed_at':'synthetic'}):
+        assert c.post('/api/auth/login', json={'email':'managed-fixture@example.invalid','password':'synthetic'}).status_code == 200
     assert c.get('/api/me').status_code == 200
     assert c.patch('/api/admin/'+slug+'/settings', json={'name':'Test','tagline':'','accent':'#ffffff'}, headers=headers).status_code == 403
     assert c.post('/api/auth/signup', json={'email':'new@example.invalid','password':'ExampleStrong123!','name':'New'}).status_code == 503

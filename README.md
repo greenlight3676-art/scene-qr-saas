@@ -256,7 +256,9 @@ SQLite/local-auth beta workflows remain supported. Historical sections above
 describe earlier milestones; use [BACKEND_COMPLETION_REPORT.md](BACKEND_COMPLETION_REPORT.md)
 for the current integration boundary and verification evidence.
 
-These features do not mean the empty hosted Supabase project has been migrated.
-Staging provider checks, backup/restore and credential verification, reviewed
-commercial plans and deployment authorization remain required. No real charges,
-customer messages, hosted migrations or deployment were performed.
+Hosted schema v4 and RLS are now applied, with rollback-only SQL isolation checks
+recorded in [SUPABASE_CONNECTION.md](SUPABASE_CONNECTION.md). Do not rerun the
+initial Supabase bootstrap migration. The prepared runtime role is NOLOGIN;
+credentialed backend connection/TLS checks, hosted backup/restore, real Auth/email
+flows and Stripe test-account acceptance remain outstanding. No hosting or
+deployment is part of the current backend-only work.

@@ -1,5 +1,13 @@
 # Task 1 transition plan and current limits
 
+Current hosted status (2026-10-24): schema v4 and RLS are already applied to the
+verified Supabase project. See SUPABASE_CONNECTION.md for the recorded SQL checks.
+**Do not rerun the initial Supabase bootstrap SQL or run `migrate.py up` against
+that project to repeat initialization.** The preparation steps below describe
+fresh/disposable databases and historical rollout planning. This backend-only
+follow-up makes no hosted database, hosting or deployment changes. Runtime LOGIN
+credentials, actual TLS/pooler acceptance and hosted restore remain unverified.
+
 SQLite stays the default. PostgreSQL is opt-in and experimental until the live
 backend tests, API parity tests, restore drill and two-device checks pass.
 No source data is automatically exported, overwritten or deleted.

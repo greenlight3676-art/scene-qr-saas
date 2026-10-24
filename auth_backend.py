@@ -29,16 +29,16 @@ def ensure_identity(s, subject, token, email, recovery=False):
     with s.db() as c:
         if not recovery: check_revocation(s, c, subject, token)
         identity = c.execute('SELECT user_id FROM auth_identities WHERE subject=?', (subject,)).fetchone()
-        if identity:
-            return identity['user_id']
         # Existing beta users require separate dual-proof migration; never link by email.
-        if c.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone():
+        if not identity and c.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone():
             s.fail(403, 'Legacy account requires verified identity migration')
+    # A token-hash proof must match the initiating email even for bound subjects.
     user = managed_auth.call('user', token=token)
     if (user.get('id') != subject or not user.get('email_confirmed_at') or user.get('is_anonymous')
-            or user.get('email', '').lower().strip() != email):
+            or not isinstance(user.get('email'), str) or user['email'].lower().strip() != email):
         s.fail(401, 'Verified identity does not match the account')
     with s.db() as c:
+        if not recovery: check_revocation(s, c, subject, token)
         # Repeat under the application transaction lock to prevent concurrent provisioning.
         identity = c.execute('SELECT user_id FROM auth_identities WHERE subject=?', (subject,)).fetchone()
         if identity:

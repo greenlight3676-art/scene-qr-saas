@@ -122,3 +122,26 @@ def test_legacy_identity_migration_requires_both_credentials_and_never_reassigns
     assert client.post('/api/auth/migrate-identity',json=body).status_code==409
     provider(monkeypatch,'unrelated-provider@example.invalid','77777777-7777-4777-8777-777777777777')
     assert TestClient(server.app).post('/api/auth/migrate-identity',json=body).status_code==401
+
+
+@pytest.mark.parametrize('purpose', ['signup', 'recovery'])
+def test_bound_identity_verification_still_requires_initiating_email(monkeypatch, purpose):
+    email='bound-flow-'+purpose+'@example.invalid'
+    subject='88888888-8888-4888-8888-888888888888' if purpose=='signup' else '99999999-9999-4999-8999-999999999999'
+    provider(monkeypatch,email,subject)
+    client=TestClient(server.app)
+    assert client.post('/api/auth/login',json={'email':email,'password':'SyntheticPassword123!'}).status_code==200
+    assert client.post('/api/auth/logout',json={},headers={'x-scene-csrf':client.get('/api/me').json()['csrf']}).status_code==200
+    if purpose=='signup':
+        response=client.post('/api/auth/signup',json={'email':'different-flow@example.invalid','password':'SyntheticPassword123!','name':'Must not create','industry':'auto'})
+        assert response.status_code==202
+    else:
+        assert client.post('/api/auth/recover',json={'email':'different-flow@example.invalid'}).status_code==200
+    # Provider accepts a genuine hash, but its subject's email differs from this flow.
+    response=client.post('/api/auth/verify',json={'token_hash':'synthetic-valid-hash-for-other-email'})
+    assert response.status_code==401
+    assert not client.cookies.get('scene_session')
+    with server.db() as c:
+        uid=c.execute('SELECT user_id FROM auth_identities WHERE subject=?',(subject,)).fetchone()['user_id']
+        assert not c.execute('SELECT 1 FROM memberships WHERE user_id=?',(uid,)).fetchone()
+        assert c.execute('SELECT 1 FROM auth_flows WHERE flow_hash=?',(server.sha(client.cookies.get('scene_auth_flow')),)).fetchone()

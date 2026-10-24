@@ -77,3 +77,14 @@ Email delivery and Stripe test-account/webhook acceptance remain outstanding.
 No emails, live charges, paid resources, deployed app or production cutover were
 created by this setup. Do not rerun the initial bootstrap SQL on this populated
 schema; it intentionally refuses any pre-existing public application tables.
+
+## Backend-only follow-up verification — 2026-10-24
+
+Read-only connector checks reconfirmed the project is ACTIVE_HEALTHY in us-east-1,
+PostgreSQL 17.11; migration `20261024031054` is recorded; all 21 public tables have
+RLS enabled; security advisors returned zero lints. Table inventory reports one
+schema-version row and empty application tables. No hosted SQL fixtures were
+rerun, migration reapplied, credentials provisioned, or hosting/deployment created.
+The restricted runtime connection/TLS/pooler, real Auth/email and Stripe acceptance
+checks remain blocked by credentials/configuration. See BACKEND_COMPLETION_REPORT.md
+for locally implemented fixes and independent synthetic/CI verification.
