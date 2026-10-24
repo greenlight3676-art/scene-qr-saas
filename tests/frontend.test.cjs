@@ -381,3 +381,14 @@ test('expired email callbacks do not expose a password reset form',()=>{
  assert.equal(location.hash,'');assert.equal(nodes.get('#password-form').hidden,true);
  assert.match(nodes.get('#status').textContent,/invalid or expired/);
 });
+
+test('guest polling updates receipt text, color state and saved status together',async()=>{
+ const source=fs.readFileSync('static/app.js','utf8'),start=source.lastIndexOf(' initialize().catch(');
+ const node={textContent:'New',dataset:{status:'open'}},saved=new Map();let poll;
+ const context=vm.createContext({URLSearchParams,crypto:webcrypto,setInterval:callback=>(poll=callback,1),clearInterval:()=>{},sessionStorage:{setItem:(k,v)=>saved.set(k,v)},document:{hidden:false,querySelector:()=>node},fetch:async()=>({ok:true,json:async()=>({status:'completed'})})});
+ vm.runInContext(source.slice(0,start)+'globalThis.pollTest={state,beginGuestStatusPolling};})();',context);
+ context.pollTest.state.qr='sample-token';context.pollTest.state.receipts=[{id:1,ticket:'sample-private-ticket',status:'open'}];
+ context.pollTest.beginGuestStatusPolling();await poll();
+ assert.equal(node.textContent,'Done');assert.equal(node.dataset.status,'completed');
+ assert.equal(JSON.parse(saved.get('scene-receipts:sample-token'))[0].status,'completed');
+});
