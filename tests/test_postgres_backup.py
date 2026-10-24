@@ -1,5 +1,6 @@
 """Real pg_dump/pg_restore drill on a separate disposable local CI database."""
 import os
+import json
 import shutil
 import subprocess
 import uuid
@@ -32,7 +33,10 @@ def test_disposable_dump_restore_preserves_application_rows(postgres_schema,sqli
     backup=tmp_path/'synthetic-backup.dump'
     with connect(url) as raw:
         migrate(raw);import_sqlite(raw,sqlite_snapshot)
-        counts={t:raw.execute(f'SELECT count(*) AS n FROM {t}').fetchone()['n'] for t in (*TABLES,*SECURITY_TABLES,*BACKEND_TABLES)}
+        tables=(*TABLES,*SECURITY_TABLES,*BACKEND_TABLES,'scene_migrations')
+        # Counts alone miss changed statuses, contacts, receipts and QR tokens.
+        expected={t:sorted(json.dumps(dict(row),sort_keys=True) for row in
+                           raw.execute(f'SELECT * FROM {t}').fetchall()) for t in tables}
     # No password/URL is put in a command argument or printed in captured output.
     if container:
         result=subprocess.run(['docker','exec',container,'pg_dump','-U','scene_test','-d','scene_test',
@@ -59,8 +63,16 @@ def test_disposable_dump_restore_preserves_application_rows(postgres_schema,sqli
         parsed=urlsplit(url)
         restore_url=urlunsplit(parsed._replace(path='/'+restored))
         with connect(restore_url) as raw:
-            for table,count in counts.items():assert raw.execute(f'SELECT count(*) AS n FROM {table}').fetchone()['n']==count
+            for table,rows in expected.items():
+                actual=sorted(json.dumps(dict(row),sort_keys=True) for row in
+                              raw.execute(f'SELECT * FROM {table}').fetchall())
+                assert actual==rows, f'Restored rows differ in {table}'
             assert raw.execute('SELECT station_id,status FROM requests WHERE id=1').fetchone()=={'station_id':1,'status':'open'}
+            assert raw.execute('SELECT version FROM scene_migrations').fetchone()['version']==4
+            for table in ('users','businesses','stations','products','requests','scans'):
+                maximum=raw.execute(f'SELECT COALESCE(MAX(id),0) AS n FROM {table}').fetchone()['n']
+                next_id=raw.execute("SELECT nextval(pg_get_serial_sequence(%s,'id')) AS n",(table,)).fetchone()['n']
+                assert next_id>maximum, f'Restored identity sequence collides in {table}'
     finally:
         # Only this test-created, random disposable database is removed.
         with connect(base) as raw:
