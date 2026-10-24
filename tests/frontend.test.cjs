@@ -5,13 +5,13 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const {webcrypto} = require('node:crypto');
 
-function authPage(search) {
+function authPage(search, options={}) {
   const nodes=new Map();
-  const location={search,hash:'#token_hash=synthetic-test-token',pathname:'/auth/confirm'};
-  const context=vm.createContext({URLSearchParams,location,
-    history:{replaceState:()=>{location.search='';location.hash='';}},
+  const location={search,hash:options.hash??'#token_hash=synthetic-test-token',pathname:'/auth/confirm'};
+  const context=vm.createContext({URLSearchParams,location,fetch:options.fetch,
+    history:{replaceState:(_state,_title,value)=>{const next=new URL(value,'https://scene.example');location.search=next.search;location.hash=next.hash;}},
     document:{querySelector:selector=>{
-      if(!nodes.has(selector))nodes.set(selector,{hidden:selector!=='#verify-form',required:true,addEventListener(){}});
+      if(!nodes.has(selector))nodes.set(selector,{hidden:selector!=='#verify-form',required:true,handlers:{},addEventListener(type,handler){this.handlers[type]=handler}});
       return nodes.get(selector);
     }}
   });
@@ -23,7 +23,7 @@ test('password recovery opens its form after sensitive URL data is removed',()=>
   const {nodes,location}=authPage('?recover=1');
   assert.equal(nodes.get('#recover-form').hidden,false);
   assert.equal(nodes.get('#verify-form').hidden,true);
-  assert.equal(location.search,'');assert.equal(location.hash,'');
+  assert.equal(location.search,'?recover=1');assert.equal(location.hash,'');
 });
 
 test('verified account setup opens its form after URL cleanup',()=>{
@@ -46,7 +46,7 @@ function guestApp(industry, fetch, nodes={}) {
   });
   vm.runInContext(source.slice(0, start) + `
     renderGuest=()=>{};toast=()=>{};beginGuestStatusPolling=()=>{};
-    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations,loadBusiness};
+    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations,loadBusiness,onBrand,requestCard,scanTokenFromLocation};
   })();`, context);
   const app = context.guestTest;
   app.storage=storage;app.context=context;
@@ -325,4 +325,59 @@ test('revoked access immediately clears cached private workspace data',async()=>
   assert.equal(app.state.requestPage,null);
   assert.equal(app.state.inviteUrl,'');
   assert.match(content.textContent,/access|sign in/i);
+});
+
+
+test('business accents retain readable header contrast',()=>{
+  const app=guestApp('restaurant',async()=>{});
+  const luminance=hex=>hex.slice(1).match(/../g).map(v=>parseInt(v,16)/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
+  for(const color of ['#000000','#ffffff','#777777','#808080','#ff0000','#00ff00','#0000ff','#c28f5a']){
+    const a=luminance(color),b=luminance(app.onBrand(color));
+    assert.ok((Math.max(a,b)+.05)/(Math.min(a,b)+.05)>=4.5,color);
+  }
+});
+
+test('service tickets expose one next action and a textual status',()=>{
+  const app=guestApp('restaurant',async()=>{});app.state.business={role:'owner'};
+  const ticket={id:12,station:'Table <01>',kind:'service',message:'Call server',created_at:1700000000};
+  const start=app.requestCard({...ticket,status:'open'});
+  assert.match(start,/data-next-status="in_progress"/);assert.match(start,/>Start<\/button>/);
+  assert.ok(!start.includes('<select'));assert.ok(start.includes('Table &lt;01&gt;'));
+  assert.match(app.requestCard({...ticket,status:'in_progress'}),/>Mark done<\/button>/);
+  assert.ok(!app.requestCard({...ticket,status:'completed'}).includes('data-next-status'));
+});
+
+
+test('printed QR and legacy query links resolve to the same guest token',()=>{
+ const app=guestApp('restaurant',async()=>{});
+ assert.equal(app.scanTokenFromLocation({pathname:'/q/printed-token',search:''}),'printed-token');
+ assert.equal(app.scanTokenFromLocation({pathname:'/q/printed-token/',search:''}),'printed-token');
+ assert.equal(app.scanTokenFromLocation({pathname:'/',search:'?q=printed-token'}),'printed-token');
+ assert.equal(app.scanTokenFromLocation({pathname:'/q/%ZZ',search:''}),null);
+ assert.equal(app.scanTokenFromLocation({pathname:'/',search:''}),null);
+});
+
+
+test('default confirmation links remove tokens and ask for provider-verified sign-in',()=>{
+ const {nodes,location}=authPage('',{hash:'#access_token=synthetic-email-session&type=signup'});
+ assert.equal(location.hash,'');assert.equal(nodes.get('#verify-form').hidden,true);
+ assert.match(nodes.get('#status').textContent,/Sign in to continue/);
+ assert.ok(!nodes.get('#status').textContent.includes('synthetic-email-session'));
+});
+
+test('default recovery links use the backend verification endpoint and never URL storage',async()=>{
+ const calls=[];
+ const {nodes,location}=authPage('',{hash:'#access_token=synthetic-recovery-session&type=recovery',fetch:async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return {ok:true,json:async()=>({ok:true})}}});
+ assert.equal(location.hash,'');assert.equal(nodes.get('#password-form').hidden,false);
+ nodes.set('#password',{value:'SyntheticNewPassword123!'});
+ await nodes.get('#password-form').handlers.submit({preventDefault(){}});
+ assert.equal(calls.length,1);assert.equal(calls[0].path,'/api/auth/reset-password');
+ assert.equal(calls[0].body.access_token,'synthetic-recovery-session');
+ assert.equal(nodes.get('#password').value,'');assert.equal(nodes.get('#password-form').hidden,true);
+});
+
+test('expired email callbacks do not expose a password reset form',()=>{
+ const {nodes,location}=authPage('',{hash:'#error=access_denied&type=recovery&access_token=synthetic-invalid'});
+ assert.equal(location.hash,'');assert.equal(nodes.get('#password-form').hidden,true);
+ assert.match(nodes.get('#status').textContent,/invalid or expired/);
 });

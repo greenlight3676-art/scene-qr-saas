@@ -87,7 +87,7 @@ jobs:
           SCENE_BROWSER_TESTS: '1'
         run: |
           mkdir -p test-artifacts
-          python -m pytest -q tests/test_mobile.py --basetemp=test-artifacts/browser
+          python -m pytest -q tests/test_mobile.py tests/test_frontend.py --basetemp=test-artifacts/browser
       - name: Preserve synthetic browser screenshots and server logs
         if: always()
         uses: actions/upload-artifact@v4
