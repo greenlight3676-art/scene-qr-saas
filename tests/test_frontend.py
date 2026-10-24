@@ -82,3 +82,17 @@ def test_email_callbacks_clear_sensitive_fragments(frontend_server):
             expect(page.locator('#password-form')).to_be_visible()
             assert page.evaluate('location.hash')==''
         finally:browser.close()
+
+
+def test_recovery_and_onboarding_modes_survive_reload(frontend_server):
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            page=browser.new_context(reduced_motion='reduce').new_page()
+            for mode,selector in [('recover','#recover-form'),('onboard','#onboard-form')]:
+                page.goto(frontend_server+'/auth/confirm?'+mode+'=1')
+                expect(page.locator(selector)).to_be_visible()
+                page.reload()
+                expect(page.locator(selector)).to_be_visible()
+        finally:browser.close()

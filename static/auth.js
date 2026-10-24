@@ -6,7 +6,9 @@ const tokenHash = fragment.get('token_hash') || pageOptions.get('token_hash');
 let recoveryAccessToken = fragment.get('type') === 'recovery' ? fragment.get('access_token') : null;
 const confirmationLinkOpened = fragment.has('access_token') && !recoveryAccessToken;
 const emailLinkError = fragment.has('error') || pageOptions.has('error');
-history.replaceState(null, '', location.pathname);
+const safePageOptions=new URLSearchParams();
+for(const mode of ['recover','onboard'])if(pageOptions.has(mode))safePageOptions.set(mode,'1');
+history.replaceState(null,'',location.pathname+(safePageOptions.size?'?'+safePageOptions.toString():''));
 async function post(path, payload, csrf) {
   const response = await fetch(path, {method:'POST', credentials:'same-origin',
     headers:{'Content-Type':'application/json', ...(csrf ? {'x-scene-csrf':csrf} : {})}, body:JSON.stringify(payload)});
@@ -55,6 +57,7 @@ document.querySelector('#recover-form').addEventListener('submit',async event=>{
     await post('/api/auth/recover',{email:document.querySelector('#recover-email').value.trim()});
     document.querySelector('#recover-form').hidden=true;
     document.querySelector('#verify-form').hidden=false;
+    history.replaceState(null,'',location.pathname);
     statusNode.textContent='If eligible, check your email. Open its link, or enter a code here if one was provided.';
   } catch(error) {statusNode.textContent=error.message;}
 });

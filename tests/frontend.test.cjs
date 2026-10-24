@@ -9,7 +9,7 @@ function authPage(search, options={}) {
   const nodes=new Map();
   const location={search,hash:options.hash??'#token_hash=synthetic-test-token',pathname:'/auth/confirm'};
   const context=vm.createContext({URLSearchParams,location,fetch:options.fetch,
-    history:{replaceState:()=>{location.search='';location.hash='';}},
+    history:{replaceState:(_state,_title,value)=>{const next=new URL(value,'https://scene.example');location.search=next.search;location.hash=next.hash;}},
     document:{querySelector:selector=>{
       if(!nodes.has(selector))nodes.set(selector,{hidden:selector!=='#verify-form',required:true,handlers:{},addEventListener(type,handler){this.handlers[type]=handler}});
       return nodes.get(selector);
@@ -23,7 +23,7 @@ test('password recovery opens its form after sensitive URL data is removed',()=>
   const {nodes,location}=authPage('?recover=1');
   assert.equal(nodes.get('#recover-form').hidden,false);
   assert.equal(nodes.get('#verify-form').hidden,true);
-  assert.equal(location.search,'');assert.equal(location.hash,'');
+  assert.equal(location.search,'?recover=1');assert.equal(location.hash,'');
 });
 
 test('verified account setup opens its form after URL cleanup',()=>{
