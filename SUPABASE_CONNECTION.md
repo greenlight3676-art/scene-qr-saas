@@ -1,51 +1,79 @@
-# Scene QR SaaS — verified Supabase destination
+# Scene QR SaaS — hosted Supabase status
 
-Verified 2026-10-22 using the connected Supabase account.
+## Verified destination
+- Project: Scene QR SaaS
+- Organization ID: `yrgfwtjoxfdpslqeyjtt` (FORGE)
+- Project reference: `cwehqnziwabvnzviaqlf`
+- Region: `us-east-1`
+- API URL: https://cwehqnziwabvnzviaqlf.supabase.co
+- Dashboard: https://supabase.com/dashboard/project/cwehqnziwabvnzviaqlf
 
-| Setting | Value |
-| --- | --- |
-| Owner organization | FORGE |
-| Project name | Scene QR SaaS |
-| Project reference | `cwehqnziwabvnzviaqlf` |
-| Region | `us-east-1` |
-| API URL | `https://cwehqnziwabvnzviaqlf.supabase.co` |
-| Dashboard | https://supabase.com/dashboard/project/cwehqnziwabvnzviaqlf |
-| Server | PostgreSQL 17.11 |
-| Application tables | None at verification |
-| Application migrations | None at verification |
+## Hosted database setup completed
+This status supersedes the empty-project inspection in earlier reports.
+The owner requested Supabase setup in the current session. The isolated Scene QR
+project had no public tables or migration entries before the change. No SQLite
+data was available here or imported, and no running app was switched.
 
-This is the newly created **Scene QR SaaS** project. Do not repurpose the Cutz by Kev, Legends Barbershop or unnamed Supabase projects.
+Hosted migration `20261024031054_scene_v4_backend_schema_and_rls` applied
+successfully. Its SQL is archived in
+`supabase/migrations/20261024031054_scene_v4_backend_schema_and_rls.sql`.
+Schema statements were generated from the existing v1 SQL and the v2/v3/v4 Python
+schema modules at source `13cb9005cfa73ffcfda4ae051c8bcfe560eb99ab`.
+No application behavior was rewritten.
 
-## Important: connected project is not a completed migration
+- Application schema version: **4**.
+- **21 tables**, each with RLS enabled.
+- Table privileges revoked from PUBLIC, anon, authenticated and service_role.
+- Dedicated `scene_runtime` role has no superuser, bypass-RLS, database/role
+  creation or application schema creation privileges; it owns no app objects.
+- Runtime gets table DML and identity sequence privileges only as needed.
+  Audit events and identity bindings allow SELECT/INSERT only; schema version
+  metadata allows SELECT only.
+- Policies match the existing backend security model: tenant scope and selective
+  QR, receipt, invitation, mail-worker and billing capabilities.
+- `scene_runtime` is **NOLOGIN**, with no password provisioned. This prepares
+  privileges without creating or exposing a reusable credential.
+- Synthetic fixtures were inserted in one transaction, tested under the runtime
+  and browser roles, and rolled back. Users, businesses and requests remain empty.
+- Live SQL checks passed for unscoped denial, tenant A/B read and mutation
+  isolation, tenant reassignment denial, composite foreign keys, own-tenant update,
+  audit immutability, identity-binding protections, receipt access, QR privacy and
+  direct anonymous/authenticated table denial.
+- Supabase security advisors returned **zero lints** after application.
 
-The existing working app is FastAPI + SQLite by default. Its optional PostgreSQL adapter is server-side Psycopg, enabled by `SCENE_DATABASE_URL`; its migrations use `SCENE_MIGRATION_DATABASE_URL`. Managed registration, login, confirmation/recovery and onboarding APIs/UI, invitations and an outbox are implemented and tested with synthetic providers. Hosted provider configuration/delivery verification and realtime remain outstanding. See `BACKEND_COMPLETION_REPORT.md` and `OPERATIONS_RUNBOOK.md`.
+The rollback-only verification SQL is in `supabase/verify_scene_v4.sql`.
+This is database verification, not a live hosted API or provider acceptance test.
+No app tests were rerun locally because no Python/JavaScript application code
+changed; earlier application CI evidence remains in BACKEND_COMPLETION_REPORT.md.
 
-* Do **not** point the browser at server/database credentials. Never commit database passwords, service role keys, access tokens, `.env` files, or customer data.
-* Do **not** run `migrate.py up`, `database_security.py`, `supabase db push`, or a hosted data import until the schema plan, restricted runtime role, backup/recovery path and target environment have been reviewed and validated.
-* Continue testing PostgreSQL migrations and tenant/RLS security against a disposable **local** database or isolated test environment, as existing GitHub CI does. `main` and live infrastructure stay untouched without a separate deployment decision.
-* Reference `POSTGRES_MIGRATION.md`, `PHASE_1_2_REPORT.md`, `DEPLOYMENT_CHECKLIST.md`, `CODEX_TASKS.md`, and `AGENTS.md`.
+## Next: connect a private hosted backend
+1. Choose the actual HTTPS backend host. This repository runs FastAPI; the Supabase
+   database itself does not execute server.py. Sites may remain the frontend.
+2. In a private authenticated database administration session, provision a strong
+   password and LOGIN for `scene_runtime`, or a separate unprivileged LOGIN role
+   that inherits it. Never use the postgres owner role for application traffic.
+   Store credentials directly in the backend host's secret settings.
+   No real password or connection string belongs in chat, Git or screenshots.
+3. Set `SCENE_DATABASE_URL` to that restricted role's verified connection URL
+   using `sslmode=verify-full`. Verify the actual pooler hostname/port from the
+   project's Connect panel; do not guess them. Keep a separate administrative
+   migration URL if future upgrades are needed.
+4. Set `SCENE_AUTH_MODE=supabase` and
+   `SCENE_SUPABASE_PUBLISHABLE_KEY` from the existing project API settings.
+   Check managed_auth.py for its URL/configuration contract. Never use a secret or
+   service-role key. Configure secure cookies, the real public origin and trusted
+   hosts as OPERATIONS_RUNBOOK.md describes.
+5. Configure Supabase confirmation-required email/password auth, the actual Site
+   URL and exact allowed redirects, and code/token-hash email templates matching
+   /auth/confirm. No Auth provider settings or SMTP templates were changed here.
+6. Test signup/confirmation, login, recovery and QR request → correct owner queue
+   → status update from the hosted app and phone. Database-only checks cannot
+   establish these flows.
+7. Preserve any existing SQLite data and back it up/restore-test it before an
+   explicitly planned import or cutover. Hosted recovery, monitoring and capacity
+   remain unverified. This empty-project initialization is not a recovery drill.
 
-## Link the CLI from your own Chromebook
-
-The following establishes local CLI project identity but does not run database migrations:
-
-```bash
-cd ~/scene-qr-saas
-npx supabase --help
-npx supabase login
-# Only if the repository does not already have supabase/config.toml:
-# npx supabase init
-npx supabase link --project-ref cwehqnziwabvnzviaqlf
-```
-
-The CLI may prompt for a password/browser sign-in. Enter secrets only in their intended authenticated prompts. Never paste credentials into chat or GitHub.
-
-## Work to complete before live cutover
-
-1. Validate the new database is still empty and verify migration/rollback and restore strategy; review hosted database backups available under the project plan.
-2. Provision a least-privilege *server-only* runtime role and a distinct migration role. Confirm privileges and RLS via negative tenant A/B and guest-access tests.
-3. Apply application schema and security as one reviewed, repeatable migration sequence, then recheck Supabase security advisors. Preserve SQLite and its backup for rollback/reconciliation.
-4. Switch only a private staging app to the restricted PostgreSQL URL, with HTTPS and no demo users. Test phone QR scans, customer requests, staff status changes and isolation.
-5. Implement Supabase Auth or another managed auth system with verified email and recovery before any broad public or commercial launch. Define backups, monitoring and privacy policies.
-
-**Status:** Project identity verified; no hosted schema, user data, or deployment changed during this documentation update.
+Email delivery and Stripe test-account/webhook acceptance remain outstanding.
+No emails, live charges, paid resources, deployed app or production cutover were
+created by this setup. Do not rerun the initial bootstrap SQL on this populated
+schema; it intentionally refuses any pre-existing public application tables.
