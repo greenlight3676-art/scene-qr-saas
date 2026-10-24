@@ -40,3 +40,12 @@ SCENE QR is a multi-tenant, industry-configurable SaaS for QR-powered experience
 - Docs updated for installation, env vars, migration and deployment.
 - No secret or SQLite runtime DB accidentally committed.
 - Explain what is simulated versus truly integrated, and list remaining production blockers.
+
+## Reusable design skills
+When changing frontend layout, flows, copy, animation, accessibility, or preparing a demo, consult the matching skills in `.agents/skills/`:
+- `premium-product-design`: coherent design systems and page hierarchy.
+- `cinematic-motion-and-materials`: purposeful movement, transitions and glass-like overlays.
+- `business-flow-ux-and-microcopy`: onboarding, QR requests, dashboard flows and copy.
+- `inclusive-responsive-frontend`: accessibility, mobile, internationalization and performance.
+- `premium-release-audit`: interactive QA before demos or client handoff.
+Keep these skills subordinate to the security rules, working functionality, test requirements, and no-unauthorized-deployment constraints above.
