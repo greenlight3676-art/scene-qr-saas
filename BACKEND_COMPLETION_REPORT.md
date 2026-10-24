@@ -1,5 +1,14 @@
 # Scene QR backend completion report
 
+Latest ordered acceptance follow-up (Stripe excluded): see
+[BACKEND_ACCEPTANCE_TASKS.md](BACKEND_ACCEPTANCE_TASKS.md). Synced newer workflow/
+restore source 9d892ee. Added read-only preflight and OTP email drafts; seven new
+tests and 18 existing Auth/mail/workflow/backup tests passed. Hosted read-only SQL
+reconfirms schema v4 and restricted NOLOGIN role flags; FORGE reports Free plan.
+Actual runtime credentials/TLS, real Auth/email and hosted export/restore remain
+blocked by the specific private configuration/target inputs in that checklist.
+No credential was provisioned or email sent. No Stripe/hosting/deployment action.
+
 ## Current backend-only follow-up — 2026-10-24
 
 Synced branch source `4db17ad038cc01c6ab43fe8fe5a2c68375d7296f` before edits.

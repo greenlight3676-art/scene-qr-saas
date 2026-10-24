@@ -214,3 +214,25 @@ See BACKEND_COMPLETION_REPORT.md for evidence, limitations and release decision.
 
 No credentials were provisioned and no provider checks are represented as passed
 by synthetic tests. Current hosted SQL evidence comes from SUPABASE_CONNECTION.md.
+
+## Ordered acceptance work — Stripe excluded
+
+- [x] Sync newer workflow/restore commits through 9d892ee before edits.
+- [x] Verify hosted v4 and NOLOGIN/restricted role flags with read-only SQL;
+  verify FORGE Free plan and inspect current backup documentation.
+- [x] Add offline-default, read-only DB/Auth preflight with secret-safe output:
+  seven new tests passed. No mail/Stripe/migration/deploy action exists in this tool.
+- [x] Prepare code-based signup/recovery email template drafts and ordered
+  BACKEND_ACCEPTANCE_TASKS.md with concrete prerequisites and evidence boundaries.
+- [x] Rerun existing Auth, mail, two-business/restored API and backup tests:
+  18 passed using synthetic/disposable data; not provider acceptance.
+- [ ] Provision private runtime login and verify actual TLS/pooler connection:
+  blocked by private credential destination and runtime connection configuration.
+- [ ] Configure Auth/email and perform approved mailbox/session acceptance:
+  blocked by origin, recipient, sender/SMTP credentials and configuration access.
+- [ ] Export hosted backup and restore separately: blocked by private archive
+  location, dump credentials, client tools and an approved isolated restore target.
+
+No Stripe action, hosting, deployment, installation, initial migration or external
+email was performed. The owner's requested origin/recipient/credential location
+details are pending. See BACKEND_ACCEPTANCE_TASKS.md for the ordered handoff.

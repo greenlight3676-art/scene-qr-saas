@@ -73,3 +73,14 @@ diagnosis and publication to `greenlight3676-art/scene-qr-saas` on
 is within scope. No production writes/migrations, deployment, spending, real
 charges, external customer messages, recurring workers or installations were
 performed or authorized by this development instruction.
+
+## 2026-10-24 — Ordered backend acceptance, Stripe excluded
+
+Owner requests the database connection, Auth/email and backup/recovery tasks be
+handled in order, explicitly excluding Stripe. Prior no-hosting/no-deployment and
+no-initial-migration constraints remain. This run performs read-only hosted
+metadata/role/plan inspection, local preflight/template/checklist preparation,
+synthetic tests and branch publication under the existing authorization.
+Private credential destination, staging origin and test recipient were requested;
+none was supplied during preparation. No credentials provisioned, external mail
+sent, hosted restore initiated, installation, spending or Stripe action performed.
