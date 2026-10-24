@@ -65,3 +65,20 @@ def test_scan_request_receipt_staff_complete(frontend_server,width):
             staff.locator('.request-card',has_text='Call server').filter(has=staff.locator('[data-next-status="completed"]')).first.get_by_role('button',name='Mark done',exact=False).click()
             expect(guest.locator('#rcpt')).to_contain_text('Done',timeout=15000)
         finally:browser.close()
+
+
+def test_email_callbacks_clear_sensitive_fragments(frontend_server):
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            page=browser.new_context(reduced_motion='reduce').new_page()
+            page.goto(frontend_server+'/#access_token=synthetic-invalid&type=signup')
+            expect(page).to_have_url(frontend_server+'/auth/confirm')
+            expect(page.locator('#status')).to_contain_text('Sign in to continue')
+            expect(page.locator('#verify-form')).to_be_hidden()
+            page.goto(frontend_server+'/#access_token=synthetic-invalid&type=recovery')
+            expect(page).to_have_url(frontend_server+'/auth/confirm')
+            expect(page.locator('#password-form')).to_be_visible()
+            assert page.evaluate('location.hash')==''
+        finally:browser.close()

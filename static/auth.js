@@ -2,7 +2,10 @@
 const statusNode = document.querySelector('#status');
 const pageOptions = new URLSearchParams(location.search);
 const fragment = new URLSearchParams(location.hash.slice(1));
-const tokenHash = fragment.get('token_hash');
+const tokenHash = fragment.get('token_hash') || pageOptions.get('token_hash');
+let recoveryAccessToken = fragment.get('type') === 'recovery' ? fragment.get('access_token') : null;
+const confirmationLinkOpened = fragment.has('access_token') && !recoveryAccessToken;
+const emailLinkError = fragment.has('error') || pageOptions.has('error');
 history.replaceState(null, '', location.pathname);
 async function post(path, payload, csrf) {
   const response = await fetch(path, {method:'POST', credentials:'same-origin',
@@ -26,10 +29,16 @@ if (tokenHash) document.querySelector('#code').required = false;
 document.querySelector('#password-form').addEventListener('submit', async event => {
   event.preventDefault();
   try {
-    const response = await fetch('/api/auth/recovery-session', {credentials:'same-origin'});
-    const session = await response.json();
-    if (!response.ok) throw new Error('Recovery session expired. Request a new code.');
-    await post('/api/auth/complete-recovery', {password:document.querySelector('#password').value}, session.csrf);
+    const password=document.querySelector('#password').value;
+    if(recoveryAccessToken){
+      await post('/api/auth/reset-password',{access_token:recoveryAccessToken,password});
+      recoveryAccessToken=null;
+    }else{
+      const response=await fetch('/api/auth/recovery-session',{credentials:'same-origin'});
+      const session=await response.json();
+      if(!response.ok)throw new Error('Recovery session expired. Request a new code.');
+      await post('/api/auth/complete-recovery',{password},session.csrf);
+    }
     document.querySelector('#password').value = '';
     document.querySelector('#password-form').hidden = true;
     statusNode.textContent = 'Password changed. Return to Scene and sign in again.';
@@ -65,3 +74,22 @@ document.querySelector('#onboard-form').addEventListener('submit',async event=>{
     location.assign('/');
   } catch(error) {statusNode.textContent=error.message;}
 });
+
+// Supabase's default email links return an implicit session in the fragment.
+// Keep it only in memory, remove it from history, and let the backend verify it.
+if(recoveryAccessToken){
+  document.querySelector('#recover-form').hidden=true;
+  document.querySelector('#verify-form').hidden=true;
+  document.querySelector('#password-form').hidden=false;
+  statusNode.textContent='Choose a new password. The server will verify your recovery link when you save.';
+}else if(confirmationLinkOpened){
+  document.querySelector('#verify-form').hidden=true;
+  statusNode.textContent='Your email link has opened. Sign in to continue; Scene will check your verified email before creating a session.';
+  const back=document.querySelector('a[href="/"]');if(back){back.href='/?signin=1';back.textContent='Sign in to Scene';}
+}
+if(emailLinkError){
+  recoveryAccessToken=null;
+  document.querySelector('#verify-form').hidden=true;
+  document.querySelector('#password-form').hidden=true;
+  statusNode.textContent='This email link is invalid or expired. Return to Scene and request a new link.';
+}
