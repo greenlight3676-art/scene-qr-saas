@@ -34,9 +34,22 @@ and checks that restored identity sequences cannot collide with existing IDs.
 The new two-business workflow is included in the restricted-role PostgreSQL CI job.
 
 ## PostgreSQL and CI
-The expanded CI run is pending publication/execution. Its actual outcome will be
-recorded here after completion. Local PostgreSQL tools are unavailable; the dump/
-restore check uses the existing disposable PostgreSQL 17 CI container.
+Verified source: `06f91871bbe19034995e6c06f4da0808a6d4c71b` on `qr-overnight-build`.
+All four CI jobs passed in https://github.com/greenlight3676-art/scene-qr-saas/actions/runs/40072244351.
+
+- Application Python suite: **72 passed, 21 skipped** (separate PG/browser suites).
+- PostgreSQL 17 migration, constraints and actual dump/restore: **11 passed**.
+- Restricted PostgreSQL API contracts, including the new two-business lifecycle:
+  **59 passed, 2 skipped** (SQLite-only trigger and SQLite-only recovery cases).
+- Founder lifecycle: passed separately on SQLite and PostgreSQL.
+- Frontend regression checks: **24 passed**.
+- Mobile browser workflow job: passed.
+- Container build, readiness and account/request persistence after restart: passed.
+
+The new SQLite restore acceptance and full-row/identity-sequence PostgreSQL restore
+assertions passed. No application implementation fix was required. Local PostgreSQL
+tools are unavailable; the actual dump/restore used the disposable PostgreSQL 17 CI
+container. These results do not claim a hosted Supabase restore rehearsal.
 
 ## Verification boundaries
 These are real API/database operations on synthetic local/CI data. Local account
