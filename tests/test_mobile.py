@@ -311,7 +311,8 @@ def test_catalog_edit_station_pause_and_selection_notes(local_site,width):
             expect(station_card.locator('.qr-paused')).to_be_visible()
             assert owner.request.get('/api/admin/'+slug).json()['stations'][0]['token']==token
             phone.reload()
-            expect(phone.locator('.loading-phone')).to_contain_text('QR location is unavailable')
+            expect(phone.get_by_role('alert')).to_contain_text('QR location is unavailable')
+            expect(phone.get_by_role('button', name='Try again', exact=True)).to_be_visible()
             station_card.locator('summary').click()
             settings.locator('[name="active"]').check()
             settings.get_by_role('button',name='Save location').click()
@@ -345,7 +346,7 @@ def test_founder_browser_signup_lost_response_and_refresh(local_site, tmp_path):
                                         reduced_motion='reduce', base_url=local_site)
             dashboard = owner.new_page()
             dashboard.goto('/')
-            dashboard.get_by_role('button', name='Start building').click()
+            dashboard.locator('#openSignUp').click()
             dashboard.locator('#authBusiness').fill('Synthetic Founder Browser Studio')
             dashboard.locator('#authIndustry').select_option('auto')
             dashboard.locator('#authEmail').fill('founder-browser@example.invalid')
