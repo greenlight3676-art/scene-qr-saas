@@ -82,3 +82,48 @@ body.standalone-guest .guest-topbar #exitGuest{display:none!important}
 #cartNote{width:100%;max-width:100%;min-height:60px;resize:vertical;font-size:16px;background:#fff;color:#342830;border:1px solid #a79a9f;border-radius:10px;padding:10px}
 .cart-note-help{font-size:12px;line-height:1.5}
 @media(max-width:768px){.catalog-row{flex-wrap:wrap;gap:10px}.catalog-row .row-main{flex:1 1 145px;min-width:0}.catalog-row button{min-height:44px}.qr-actions .smallbtn,.station-settings button{min-height:44px}.catalog-form-actions .btn{flex:1}}
+
+/* Account setup: shared branding, readable forms and a clear next step. */
+[hidden]{display:none!important}
+.account-page{min-height:100dvh;background:radial-gradient(ellipse at 12% 50%,#63424d33,transparent 55%),#100e17;color:#f7f1ec}
+.account-header,.account-footer{max-width:1180px;margin:0 auto;padding:30px 32px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.account-back{font-size:13px;color:#dfd1cb;text-decoration:none;min-height:44px;display:inline-flex;align-items:center}
+.account-layout{max-width:1120px;margin:44px auto 70px;padding:0 32px;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center}
+.account-story .micro,.account-card .micro{color:#e6c5a1;font-size:11px;letter-spacing:.16em}
+.account-story h1{font-size:clamp(36px,4vw,52px);line-height:1.12;letter-spacing:-.045em;margin:22px 0}
+.account-story h1 em{font-weight:400;color:#eacba9}
+.account-story>p:not(.micro){color:#c3b4bd;font-size:15px;line-height:1.8;max-width:390px}
+.account-steps{list-style:none;padding:0;margin:34px 0;display:grid;gap:24px}
+.account-steps li{display:flex;gap:18px;align-items:start}
+.account-steps li>span{border:1px solid #b98f734d;border-radius:50%;width:36px;height:36px;display:grid;place-items:center;flex-shrink:0;font-size:11px;color:#efcfb0}
+.account-steps b{font-size:14px;font-weight:600}.account-steps p{font-size:13px;color:#c3b4bd;margin:7px 0 0;line-height:1.6}
+.account-story>p.account-privacy{border-top:1px solid #ffffff1c;padding-top:22px;font-size:12px;max-width:380px}
+.account-card{background:linear-gradient(145deg,#25202d,#191621);border:1px solid #ffffff20;border-radius:24px;padding:38px;box-shadow:0 24px 70px #0003;min-width:0}
+.account-card h2{font-size:34px;letter-spacing:-.045em;line-height:1.15;margin:18px 0 14px}
+.account-description{font-size:14px;line-height:1.8;color:#d0c2cc;margin-bottom:28px}
+.account-card form{display:grid;gap:12px}.account-card label{font-size:13px;color:#eee0df;font-weight:600}
+.account-card input,.account-card select{width:100%;min-width:0;min-height:50px;padding:12px 14px;border:1px solid #827180;border-radius:10px;background:#120f1a;color:#fbf7f4;font:inherit;font-size:16px}
+.account-card #code-field{display:grid;gap:12px}.account-card #code{font-variant-numeric:tabular-nums;letter-spacing:.15em}
+.account-card .btn{min-height:50px;margin-top:8px;white-space:normal;text-align:center;justify-content:center}
+.account-help{color:#c4b6c4;font-size:12px;line-height:1.6;margin:0 0 8px}
+.account-status{padding:14px;border:1px solid #81b6a45c;border-radius:10px;background:#9bc6b513;color:#d3e9df;font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.account-status.is-error{border-color:#ee9b9b88;background:#e97f7f15;color:#ffe1df}
+.account-continue{display:flex;text-decoration:none}.account-card-footer{border-top:1px solid #ffffff1c;margin-top:30px;padding-top:20px;display:grid;gap:15px}
+.account-card-footer span{font-size:9px;color:#c0acbb;letter-spacing:.14em}.account-card-footer a{font-size:12px;color:#efcfb0;line-height:1.7;min-height:30px}
+.account-footer{font-size:11px;color:#b9a7b3;border-top:1px solid #ffffff17;line-height:1.6}
+button:disabled{cursor:wait;opacity:.65}
+:where(a,button,input,select,textarea):focus-visible{outline:2px solid #f5d2a9;outline-offset:4px}
+@media(max-width:850px){.account-layout{gap:32px}.account-card{padding:28px}.account-header{padding:22px 24px}}
+@media(max-width:650px){.account-layout{grid-template-columns:1fr;max-width:480px;margin:24px auto 40px;padding:0 20px;gap:24px}.account-story h1{font-size:36px;margin:12px 0}.account-story>p:not(.micro){font-size:13px}.account-steps,.account-story>p.account-privacy{display:none}.account-card{padding:26px 22px;border-radius:18px}.account-card h2{font-size:30px}.account-header{padding:20px}.account-back{font-size:12px}.account-footer{padding:22px 20px;flex-wrap:wrap;gap:5px}.nav-cta .btn-ghost{display:inline-flex;min-height:44px}.nav-cta .btn-primary{min-height:44px}.nav-cta{gap:6px}}
+
+/* Show the product's core handoff: guest need + station context. */
+.request-preview{position:relative;width:min(100%,410px);padding:28px;background:linear-gradient(145deg,#282230,#15131e);border:1px solid #ffffff29;border-radius:24px;box-shadow:0 30px 80px #0004;transform:rotate(-3deg)}
+.request-preview>.micro{font-size:10px;letter-spacing:.14em;color:#eacba9;margin:0 0 24px}
+.request-preview-origin{display:flex;align-items:center;gap:12px;margin-bottom:22px}.preview-pin{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#ebc89320;font-size:26px;color:#ebc893}
+.request-preview-origin small{font-size:9px;letter-spacing:.14em;color:#c5b6c6}.request-preview-origin h2{font-size:24px;margin:5px 0 0;letter-spacing:-.03em}.request-preview-origin .tag{margin-left:auto}
+.preview-message{padding:20px;background:#eee3d5;color:#342831;border-radius:16px 16px 16px 4px}.preview-message>span{font-size:9px;letter-spacing:.12em;font-weight:750}.preview-message p{font-size:19px;line-height:1.5;margin:10px 0}.preview-message small{font-size:11px;color:#655460}
+.preview-connection{text-align:center;font-size:23px;color:#d8b38f;padding:8px}
+.preview-queue{padding:20px;background:#ffffff08;border:1px solid #ffffff20;border-radius:14px}.preview-queue>div{display:flex;align-items:center;gap:8px;font-size:12px}.preview-queue>p{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px}.preview-location{font-size:12px;color:#e9c6a2}.preview-progress{display:flex;justify-content:space-between;gap:8px;padding-top:22px;color:#cdbcc9;font-size:10px}.preview-progress span:first-child{color:#f3d6b2}.preview-caption{text-align:center;font-size:12px;color:#cdbcc9;margin:20px 0 0}
+.request-location{display:grid;gap:5px;margin:12px 0;padding:10px 12px;border-left:2px solid #e5bd94;background:#e5bd940c;border-radius:0 8px 8px 0}.request-location>span{font-size:9px;letter-spacing:.12em;color:#c6b3c3}.request-location strong{font-size:15px;color:#f4d9bc;overflow-wrap:anywhere}
+@media(max-width:850px){.nav-cta .btn-ghost{display:inline-flex;min-height:44px}.land-art{min-height:unset;padding:38px 12px}.request-preview{transform:none}.land-copy h1{font-size:clamp(46px,8vw,80px)}}
+@media(max-width:600px){.land-art{padding:28px 0}.request-preview{padding:22px;border-radius:18px}.land-copy h1{font-size:clamp(42px,10.5vw,63px)}.preview-message p{font-size:18px}.request-card .request-body{min-width:0}}

@@ -395,3 +395,108 @@ def test_founder_browser_signup_lost_response_and_refresh(local_site, tmp_path):
             phone.screenshot(path=str(tmp_path / 'founder-recovery-phone.png'), full_page=True)
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize('width', [320, 390, 768])
+def test_account_recovery_mode_errors_and_password_flow(local_site,width,tmp_path):
+    import json
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            page=browser.new_page(viewport={'width':width,'height':900},reduced_motion='reduce')
+            calls=[]
+            def route(r):
+                request=r.request;path=request.url.split(local_site)[-1];calls.append((path,request))
+                if path=='/api/auth/verify' and request.post_data_json.get('token')=='wrong':
+                    r.fulfill(status=401,json={'detail':'Verification code is invalid or expired'});return
+                data={'ok':True}
+                if path=='/api/auth/verify':data={'recovery':True}
+                if path=='/api/auth/recovery-session':data={'csrf':'synthetic-recovery-csrf'}
+                if path=='/api/auth/complete-recovery':
+                    assert request.header_value('x-scene-csrf')=='synthetic-recovery-csrf'
+                r.fulfill(json=data)
+            page.route('**/api/auth/**',route)
+            page.goto(local_site+'/auth/confirm?recover=1')
+            expect(page.locator('#recover-form')).to_be_visible()
+            expect(page.locator('#verify-form')).to_be_hidden()
+            assert '?' not in page.url
+            page.locator('#recover-email').fill('synthetic@example.invalid')
+            page.get_by_role('button',name='Send recovery code').click()
+            expect(page.locator('#code')).to_be_focused()
+            page.locator('#code').fill('wrong')
+            page.get_by_role('button',name='Verify email').click()
+            expect(page.locator('#status')).to_contain_text('invalid or expired')
+            expect(page.locator('#status')).to_be_focused()
+            expect(page.get_by_role('button',name='Verify email')).to_be_enabled()
+            page.locator('#code').fill('123456')
+            page.get_by_role('button',name='Verify email').click()
+            expect(page.locator('#password-form')).to_be_visible()
+            expect(page.locator('#password')).to_be_focused()
+            page.screenshot(path=str(tmp_path/f'account-recovery-{width}.png'),full_page=True)
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            page.locator('#password').fill('SyntheticNewPassword123!')
+            page.get_by_role('button',name='Save new password').click()
+            expect(page.locator('#status')).to_contain_text('Password changed')
+            expect(page.locator('#accountContinue')).to_contain_text('Return to sign in')
+            assert [path for path,_ in calls].count('/api/auth/complete-recovery')==1
+        finally:browser.close()
+
+
+def test_account_onboarding_keeps_mode_and_sends_csrf(local_site):
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            page=browser.new_page(viewport={'width':390,'height':844},reduced_motion='reduce')
+            created=[]
+            page.route('**/api/me',lambda r:r.fulfill(json={'csrf':'synthetic-onboard-csrf'}))
+            def organization(r):
+                created.append(r.request.post_data_json)
+                assert r.request.header_value('x-scene-csrf')=='synthetic-onboard-csrf'
+                r.fulfill(json={'id':1,'slug':'synthetic-onboarding'})
+            page.route('**/api/organizations',organization)
+            page.goto(local_site+'/auth/confirm?onboard=1')
+            expect(page.locator('#onboard-form')).to_be_visible()
+            expect(page.locator('#verify-form')).to_be_hidden()
+            page.locator('#business-name').fill('Synthetic onboarding')
+            page.get_by_role('button',name='Create business workspace').click()
+            page.wait_for_url(local_site+'/')
+            assert created==[{'name':'Synthetic onboarding','industry':'auto'}]
+        finally:browser.close()
+
+
+def test_hash_verification_scrubs_url_and_blocks_duplicate_submits(local_site):
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            page=browser.new_page(reduced_motion='reduce')
+            received=[]
+            def verify(r):
+                received.append(r.request.post_data_json)
+                r.fulfill(json={'organization':{'id':1},'onboarding_required':False})
+            page.route('**/api/auth/verify',verify)
+            page.goto(local_site+'/auth/confirm#token_hash=synthetic-hash-never-real')
+            assert '#' not in page.url
+            expect(page.locator('#code-field')).to_be_hidden()
+            page.locator('#verify-form').evaluate("form=>{form.dispatchEvent(new Event('submit',{cancelable:true}));form.dispatchEvent(new Event('submit',{cancelable:true}));}")
+            expect(page.locator('#accountContinue')).to_be_visible()
+            assert received==[{'token_hash':'synthetic-hash-never-real'}]
+        finally:browser.close()
+
+
+def test_landing_explains_guest_help_and_station_context_on_mobile(local_site,tmp_path):
+    from playwright.sync_api import sync_playwright,expect
+    with sync_playwright() as pw:
+        browser=pw.chromium.launch()
+        try:
+            page=browser.new_page(viewport={'width':390,'height':844},reduced_motion='reduce')
+            page.goto(local_site)
+            expect(page.locator('.land-copy h1')).to_contain_text('Staff see where.')
+            expect(page.locator('#openSignIn')).to_be_visible()
+            expect(page.locator('.request-preview')).to_contain_text('Table 07')
+            expect(page.locator('.preview-location')).to_contain_text('Location included')
+            assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+            page.screenshot(path=str(tmp_path/'guest-help-landing.png'),full_page=True)
+        finally:browser.close()

@@ -1,3 +1,33 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Verify your Scene account</title><link rel="stylesheet" href="/static/style.css"><script src="/static/auth.js" defer></script></head>
-<body><main class="container"><h1>Verify your Scene account</h1><p>Use the code from your email in the browser where you started registration or recovery.</p><form id="onboard-form" hidden><label for="business-name">Business name</label><input id="business-name" minlength="2" maxlength="80" autocomplete="organization" required><label for="business-industry">Business type</label><select id="business-industry"><option value="auto">Automotive services</option><option value="restaurant">Restaurant</option><option value="barber">Barber / beauty</option><option value="retail">Retail</option></select><button type="submit">Create business workspace</button></form><form id="recover-form" hidden><label for="recover-email">Account email</label><input id="recover-email" type="email" autocomplete="email" maxlength="200" required><button type="submit">Request recovery code</button></form><form id="verify-form"><label for="code">Email verification code</label><input id="code" autocomplete="one-time-code" required maxlength="128"><button type="submit">Verify email</button></form><form id="password-form" hidden><label for="password">New password (12 or more characters)</label><input id="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required><button type="submit">Change password</button></form><p id="status" role="status" aria-live="polite"></p><p><a href="/">Return to Scene</a></p></main></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#17121e"><title>Account setup · SCENE</title>
+<link rel="stylesheet" href="/static/style.css"><script src="/static/auth.js" defer></script>
+</head>
+<body class="account-page">
+<header class="account-header"><a href="/" class="wordmark" aria-label="SCENE home"><span class="brand-mark">S</span>SCENE<span class="dotcap">.</span></a><a class="account-back" href="/">← Back to Scene</a></header>
+<main class="account-layout">
+  <aside class="account-story" aria-label="Account setup guide">
+    <p class="micro">YOUR NEXT CHAPTER</p>
+    <h1>A little setup.<br><em>A world of possibilities.</em></h1>
+    <p>Your business, your team, your customer experience. Keep it all connected in one place.</p>
+    <ol class="account-steps"><li><span>01</span><div><b>Verify your email</b><p>Make sure your account belongs to you.</p></div></li><li><span>02</span><div><b>Make it yours</b><p>Create a workspace for your business.</p></div></li><li><span>03</span><div><b>Welcome your guests</b><p>Set up your catalog and QR stations.</p></div></li></ol>
+    <p class="account-privacy">Your verification code stays private. Scene staff will never ask you to share it.</p>
+  </aside>
+  <section class="account-card" aria-labelledby="accountTitle">
+    <p class="micro" id="accountEyebrow">ACCOUNT VERIFICATION</p>
+    <h2 id="accountTitle">Check your inbox.</h2>
+    <p id="accountDescription" class="account-description">Enter the code from your email in the browser where you started registration.</p>
+    <form id="onboard-form" hidden><label for="business-name">Business name</label><input id="business-name" minlength="2" maxlength="80" autocomplete="organization" placeholder="Your business name" required><label for="business-industry">Business type</label><select id="business-industry"><option value="auto">Automotive services</option><option value="restaurant">Restaurant</option><option value="barber">Barber / beauty</option><option value="retail">Retail</option></select><button class="btn btn-primary" type="submit">Create business workspace →</button></form>
+    <form id="recover-form" hidden><label for="recover-email">Account email</label><input id="recover-email" type="email" autocomplete="email" maxlength="200" placeholder="you@business.com" required><button class="btn btn-primary" type="submit">Send recovery code →</button></form>
+    <form id="verify-form"><div id="code-field"><label for="code">Email verification code</label><input id="code" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" required maxlength="128" aria-describedby="code-help"><p class="account-help" id="code-help">Use the most recent code sent to your inbox. Keep this browser open.</p></div><button class="btn btn-primary" type="submit">Verify email →</button></form>
+    <form id="password-form" hidden><label for="password">New password</label><input id="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required aria-describedby="password-help"><p class="account-help" id="password-help">Use at least 12 characters. Choose a password you haven't used elsewhere.</p><button class="btn btn-primary" type="submit">Save new password →</button></form>
+    <p id="status" class="account-status" role="status" aria-live="polite" tabindex="-1" hidden></p>
+    <a id="accountContinue" class="btn btn-primary account-continue" href="/" hidden>Open my workspace →</a>
+    <div class="account-card-footer"><span>SCENE / ACCOUNT ACCESS</span><a href="/auth/confirm?recover=1">Need a new recovery code?</a></div>
+  </section>
+</main>
+<footer class="account-footer">Every scan, an experience. <span>Made for your business.</span></footer>
+</body>
+</html>

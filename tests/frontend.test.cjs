@@ -10,11 +10,15 @@ function authPage(search) {
   const location={search,hash:'#token_hash=synthetic-test-token',pathname:'/auth/confirm'};
   const context=vm.createContext({URLSearchParams,location,
     history:{replaceState:()=>{location.search='';location.hash='';}},
-    document:{querySelector:selector=>{
-      if(!nodes.has(selector))nodes.set(selector,{hidden:selector!=='#verify-form',required:true,addEventListener(){}});
-      return nodes.get(selector);
-    }}
+    document:{getElementById:id=>node('#'+id),querySelector:selector=>node(selector)}
+
   });
+  function node(selector){
+    if(!nodes.has(selector))nodes.set(selector,{hidden:selector!=='#verify-form',required:true,
+      textContent:'',addEventListener(){},setAttribute(){},focus(){},classList:{toggle(){}},
+      querySelector:()=>node(selector+' button')});
+    return nodes.get(selector);
+  }
   vm.runInContext(fs.readFileSync('static/auth.js','utf8'),context);
   return {nodes,location};
 }
