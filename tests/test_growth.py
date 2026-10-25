@@ -84,3 +84,32 @@ def test_invalid_booking_revenue_expired_quote_and_followup_filters():
         with db() as con:con.execute('UPDATE growth_jobs SET quote_expires=? WHERE request_id=?',(ts()-10,rid))
         res=c.post(f'/api/guest/requests/{rid}/journey',headers={'x-scene-ticket':r['ticket']},json={'quote_revision':1,'decision':'accept'})
         assert res.status_code==409
+
+
+def test_growth_never_nests_session_or_rate_limit_database_transactions(monkeypatch):
+    # postgres_db takes a transaction advisory lock. A nested connection would block itself.
+    import server as s
+    import threading
+    from contextlib import contextmanager
+    with TestClient(app) as owner:
+        slug,h,r,_=setup(owner);base=f'/api/admin/{slug}/growth';rid=r['request_id']
+        original=s.db;local=threading.local()
+        @contextmanager
+        def guarded_db():
+            assert not getattr(local,'inside',False),'Nested database transaction would deadlock PostgreSQL'
+            local.inside=True
+            try:
+                with original() as c:yield c
+            finally:local.inside=False
+        original_limit=s.rate_limit
+        def guarded_limit(*args,**kwargs):
+            assert not getattr(local,'inside',False),'Durable rate limiter must run before opening database'
+            return original_limit(*args,**kwargs)
+        monkeypatch.setattr(s,'db',guarded_db);monkeypatch.setattr(s,'rate_limit',guarded_limit)
+        assert owner.get(base).status_code==200
+        assert owner.get(base+'/jobs').status_code==200
+        assert owner.put(base+'/config',headers=h,json={}).status_code==200
+        assert owner.put(base+f'/jobs/{rid}',headers=h,json=quote()).status_code==200
+        ticket={'x-scene-ticket':r['ticket']}
+        assert owner.get(f'/api/guest/requests/{rid}/journey',headers=ticket).status_code==200
+        assert owner.post(f'/api/guest/requests/{rid}/journey',headers=ticket,json={'quote_revision':1,'decision':'accept'}).status_code==200
