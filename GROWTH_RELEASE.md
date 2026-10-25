@@ -21,4 +21,6 @@ Rollback: deploy the previous backend/frontend version and keep the additive tab
 
 ## Validation
 
-82 backend tests passed; 27 opt-in/environment tests skipped. 70 frontend tests passed. Isolated browser review covered desktop customer editing/save, setup, results, mobile navigation and 360px form fit. Database tenant read/write and browser-grant checks used temporary fixtures in a rolled-back transaction; no production customer data was changed.
+83 backend tests passed; 27 opt-in/environment tests skipped. 70 frontend tests passed. Isolated browser review covered desktop customer editing/save, setup, results, mobile navigation and 360px form fit. Database tenant read/write and browser-grant checks used temporary fixtures in a rolled-back transaction; no production customer data was changed.
+
+PostgreSQL transaction review: authenticate and apply durable rate limits before opening the scoped business transaction. Regression checks reject nested database transactions, which would self-block the PostgreSQL advisory lock.
