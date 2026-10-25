@@ -127,3 +127,6 @@ button:disabled{cursor:wait;opacity:.65}
 .request-location{display:grid;gap:5px;margin:12px 0;padding:10px 12px;border-left:2px solid #e5bd94;background:#e5bd940c;border-radius:0 8px 8px 0}.request-location>span{font-size:9px;letter-spacing:.12em;color:#c6b3c3}.request-location strong{font-size:15px;color:#f4d9bc;overflow-wrap:anywhere}
 @media(max-width:850px){.nav-cta .btn-ghost{display:inline-flex;min-height:44px}.land-art{min-height:unset;padding:38px 12px}.request-preview{transform:none}.land-copy h1{font-size:clamp(46px,8vw,80px)}}
 @media(max-width:600px){.land-art{padding:28px 0}.request-preview{padding:22px;border-radius:18px}.land-copy h1{font-size:clamp(42px,10.5vw,63px)}.preview-message p{font-size:18px}.request-card .request-body{min-width:0}}
+/* Form actions stay still as pointer/focus moves between account steps. */
+.account-page .btn:hover{transform:none;filter:brightness(1.06)}
+@media(prefers-reduced-motion:reduce){.btn:hover{transform:none}}

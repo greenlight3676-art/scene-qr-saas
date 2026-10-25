@@ -69,6 +69,7 @@ def test_mobile_guest_to_dashboard_request(local_site, width, tmp_path):
             dashboard.goto('/')
             expect(dashboard.locator('#appShell')).to_be_visible()
             phone.goto('/?q=' + token)
+            expect(phone.locator('.guest-sub').first).to_contain_text(board['stations'][0]['label'])
             phone.locator('[data-kind="service"]').click()
             expect(phone.locator('#receiptState')).to_have_text('open')
             dashboard.locator('#mobileMenu').click()
@@ -77,6 +78,7 @@ def test_mobile_guest_to_dashboard_request(local_site, width, tmp_path):
             dashboard.locator('[data-action="refresh"]').click()
             control = dashboard.locator('[data-status-id]').first
             expect(control).to_be_visible()
+            expect(dashboard.locator('.request-location').first).to_contain_text(board['stations'][0]['label'])
             control.scroll_into_view_if_needed()
             box = control.bounding_box()
             assert box['height'] >= 44
