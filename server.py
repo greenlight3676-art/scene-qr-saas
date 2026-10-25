@@ -144,6 +144,8 @@ def init():
         upgrade_security(c)
         from backend_schema import upgrade as upgrade_backend
         upgrade_backend(c, sqlite=True)
+        from growth import upgrade_sqlite as upgrade_growth
+        upgrade_growth(c)
         if DEMO and c.execute('SELECT COUNT(*) FROM users').fetchone()[0]==0:
             c.execute('INSERT INTO users(email,password,created_at) VALUES(?,?,?)', ('demo@scene.local',password_hash('SceneDemo2026!'),ts()))
             uid = c.execute('SELECT id FROM users WHERE email=?',('demo@scene.local',)).fetchone()[0]
@@ -513,8 +515,8 @@ def request_history(slug:str,request:Request,
             clauses.append('r.station_id=?');values.append(station_id)
         if search.strip():
             literal=search.strip().lower().replace('!','!!').replace('%','!%').replace('_','!_')
-            clauses.append("(LOWER(r.message) LIKE ? ESCAPE '!' OR LOWER(s.label) LIKE ? ESCAPE '!' OR LOWER(COALESCE(r.customer_name,'')) LIKE ? ESCAPE '!' OR LOWER(COALESCE(r.customer_contact,'')) LIKE ? ESCAPE '!')")
-            values.extend(['%'+literal+'%']*4)
+            clauses.append("(LOWER(r.message) LIKE ? ESCAPE '!' OR LOWER(s.label) LIKE ? ESCAPE '!' OR LOWER(COALESCE(r.customer_name,'')) LIKE ? ESCAPE '!' OR LOWER(COALESCE(r.customer_contact,'')) LIKE ? ESCAPE '!' OR CAST(r.id AS TEXT)=?)")
+            values.extend(['%'+literal+'%']*4+[search.strip()])
         source=' FROM requests r JOIN stations s ON s.id=r.station_id WHERE '+' AND '.join(clauses)
         counts={'all':0,'open':0,'in_progress':0,'completed':0}
         for row in c.execute('SELECT r.status,count(*) total'+source+' GROUP BY r.status',tuple(values)):
@@ -782,6 +784,8 @@ def confirm_page():
 operations.install(__import__(__name__))
 
 platform_api.install(__import__(__name__))
+import growth
+growth.install(__import__(__name__))
 
 billing.install(__import__(__name__))
 

@@ -98,7 +98,7 @@ def verify_postgres(url):
         identity = raw.execute('SELECT current_user AS name, session_user AS login').fetchone()
         verify_runtime_role(raw, identity['login'])
         verify_runtime_role(raw, identity['name'])
-        expected = ('users','businesses','memberships','stations','products','requests','sessions','invites','scans','auth_identities','audit_events','scene_migrations',*BACKEND_TABLES)
+        expected = ('users','businesses','memberships','stations','products','requests','sessions','invites','scans','auth_identities','audit_events','scene_migrations',*BACKEND_TABLES,'growth_jobs','growth_settings')
         protected = raw.execute('''SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname=current_schema() AND c.relrowsecurity AND c.relname=ANY(%s)''', (list(expected),)).fetchall()
         if {r['relname'] for r in protected} != set(expected):

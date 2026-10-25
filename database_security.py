@@ -21,7 +21,7 @@ def harden(raw, runtime_role):
             if raw.execute("SELECT pg_has_role(%s,%s,'MEMBER') AS inherits", (browser_role,runtime_role)).fetchone()['inherits']:
                 raise RuntimeError('Browser roles must not inherit backend access')
     schema = raw.execute('SELECT current_schema() AS name').fetchone()['name']
-    for table in (*TABLES, *SECURITY_TABLES, *BACKEND_TABLES, 'scene_migrations'):
+    for table in (*TABLES, *SECURITY_TABLES, *BACKEND_TABLES, 'growth_jobs', 'growth_settings', 'scene_migrations'):
         target = sql.Identifier(schema, table)
         owner = raw.execute('SELECT pg_get_userbyid(relowner) AS name FROM pg_class WHERE oid=%s::regclass', (f'{schema}.{table}',)).fetchone()['name']
         if owner == runtime_role:
@@ -39,7 +39,7 @@ def harden(raw, runtime_role):
         if any(p['policyname'] not in allowed for p in policies):
             raise RuntimeError('Review existing policies before hardening')
         raw.execute(sql.SQL('DROP POLICY IF EXISTS scene_backend ON {}').format(target))
-        predicate = sql.SQL("business_id::text = current_setting('scene.tenant_id', true)") if table in ('requests', 'products', 'stations', 'scans', 'invites', 'audit_events', *TENANT_TABLES) else sql.SQL('true')
+        predicate = sql.SQL("business_id::text = current_setting('scene.tenant_id', true)") if table in ('requests', 'products', 'stations', 'scans', 'invites', 'audit_events', *TENANT_TABLES,'growth_jobs','growth_settings') else sql.SQL('true')
         if table == 'auth_identities':
             raw.execute(sql.SQL('CREATE POLICY scene_backend ON {} FOR SELECT TO {} USING (true)').format(target, sql.Identifier(runtime_role)))
             raw.execute(sql.SQL('DROP POLICY IF EXISTS scene_identity_insert ON {}').format(target))
