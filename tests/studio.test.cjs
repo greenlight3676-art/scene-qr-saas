@@ -1,9 +1,9 @@
 const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const vm=require('node:vm');
 function studio(){
- const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{id,querySelectorAll:()=>[],dataset:{},attributes:{},disabled:false,hidden:false,textContent:'',classList:{toggle(){}},setAttribute(k,v){this.attributes[k]=v},set innerHTML(html){this.html=html;for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],{...node(match[1]),disabled:false,dataset:{},lastElementChild:{textContent:''}})},get innerHTML(){return this.html}});return nodes.get(id)};
+ const nodes=new Map();const node=id=>{if(!nodes.has(id))nodes.set(id,{id,querySelectorAll:()=>[],dataset:{},attributes:{},disabled:false,hidden:false,textContent:'',classList:{toggle(){},contains(){return false}},setAttribute(k,v){this.attributes[k]=v},set innerHTML(html){this.html=html;for(const match of html.matchAll(/id="([^"]+)"/g))nodes.set(match[1],{...node(match[1]),disabled:false,dataset:{},lastElementChild:{textContent:''}})},get innerHTML(){return this.html}});return nodes.get(id)};
  const steps=[0,1,2].map(value=>Object.assign(node('step'+value),{dataset:{tourStep:String(value)}}));const industries=['restaurant','barber','auto','retail'].map(key=>Object.assign(node(key),{dataset:{industry:key}}));
  node('openSignUp').click=()=>node('openSignUp').clicks=(node('openSignUp').clicks||0)+1;
- const document={getElementById:node,querySelectorAll:selector=>selector==='[data-tour-step]'?steps:selector==='[data-industry]'?industries:[]};
+ const document={getElementById:id=>['sidebar','mobileMenu','sidebarCurtain','authModal','phoneContent'].includes(id)?null:node(id),querySelector:()=>null,querySelectorAll:selector=>selector==='[data-tour-step]'?steps:selector==='[data-industry]'?industries:[]};
  vm.runInNewContext(fs.readFileSync('static/studio.js','utf8'),{document,MutationObserver:class{observe(){}},fetch:()=>{throw Error('Walkthrough must not contact an API')}});
  return {node,steps,industries};
 }

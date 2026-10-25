@@ -42,11 +42,11 @@ function guestApp(industry, fetch, nodes={}) {
     URLSearchParams,
     crypto: webcrypto,
     fetch,
-    document: {getElementById: id => nodes[id]||({})},
+    document: {body:{style:{}},getElementById: id => nodes[id]||({})},
   });
   vm.runInContext(source.slice(0, start) + `
     renderGuest=()=>{};toast=()=>{};beginGuestStatusPolling=()=>{};
-    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations,loadBusiness,onBrand,requestCard,scanTokenFromLocation};
+    globalThis.guestTest={state,sendCart,sendGuestRequest,submitGuestMessage,matchingProducts,adjustGuestCart,loadRequests,renderRequests,motionBehavior,renderCatalog,renderStations,loadBusiness,onBrand,requestCard,scanTokenFromLocation,authClose};
   })();`, context);
   const app = context.guestTest;
   app.storage=storage;app.context=context;
@@ -391,4 +391,12 @@ test('guest polling updates receipt text, color state and saved status together'
  context.pollTest.beginGuestStatusPolling();await poll();
  assert.equal(node.textContent,'Done');assert.equal(node.dataset.status,'completed');
  assert.equal(JSON.parse(saved.get('scene-receipts:sample-token'))[0].status,'completed');
+});
+
+
+test('closing an account dialog restores background interaction before returning focus',()=>{
+ const nodes={authModal:{classList:{add(){}}},landing:{inert:true},appShell:{inert:true},guestShell:{inert:true}};
+ const app=guestApp('restaurant',async()=>{},nodes);let restored=false;
+ app.state.authReturnFocus={focus(){assert.equal(nodes.landing.inert,false);assert.equal(nodes.appShell.inert,false);assert.equal(nodes.guestShell.inert,false);restored=true;}};
+ app.authClose();assert.equal(restored,true);
 });
