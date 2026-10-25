@@ -4,7 +4,7 @@ WORKDIR /app
 # SQLite remains supported for local/demo runs.
 COPY requirements.txt requirements-postgres.txt ./
 RUN pip install --no-cache-dir -r requirements-postgres.txt
-COPY server.py storage.py request_schema.py security_schema.py managed_auth.py backend_schema.py auth_backend.py operations.py platform_api.py billing.py mail_delivery.py ./
+COPY server.py storage.py request_schema.py security_schema.py managed_auth.py backend_schema.py auth_backend.py operations.py platform_api.py growth.py billing.py mail_delivery.py ./
 COPY static ./static
 # Public CA downloaded from the Supabase database settings certificate link.
 COPY certs/supabase-prod-ca.crt /app/certs/supabase-prod-ca.crt
