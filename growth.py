@@ -67,15 +67,15 @@ def config(c,bid):
 
 
 def install(s):
-    def authorize(c,slug,request,mutate=False):
-        user=s.user_session(request,mutate)
+    def authorize(c,slug,user):
         b=s.grant(c,slug,user['user_id'],s.EDIT_ROLES)
         return user,b
 
     @s.app.get('/api/admin/{slug}/growth')
     def dashboard(slug:str,request:Request):
+        user=s.user_session(request)
         with s.db() as c:
-            _,b=authorize(c,slug,request)
+            _,b=authorize(c,slug,user)
             source=' FROM requests r LEFT JOIN growth_jobs g ON g.request_id=r.id AND g.business_id=r.business_id WHERE r.business_id=? AND r.kind=\'question\''
             stages={k:0 for k in STAGES}
             for row in c.execute('SELECT '+STAGE_SQL+' stage,count(*) total'+source+' GROUP BY '+STAGE_SQL,(b['id'],)): stages[row['stage']]=row['total']
@@ -91,8 +91,9 @@ def install(s):
 
     @s.app.put('/api/admin/{slug}/growth/config')
     def save_config(slug:str,body:Config,request:Request):
+        user=s.user_session(request,True)
         with s.db() as c:
-            user,b=authorize(c,slug,request,True)
+            user,b=authorize(c,slug,user)
             c.execute('''INSERT INTO growth_settings(business_id,profile,review_url,booking_url,setup_complete,updated_at) VALUES(?,?,?,?,?,?)
                 ON CONFLICT(business_id) DO UPDATE SET profile=excluded.profile,review_url=excluded.review_url,booking_url=excluded.booking_url,setup_complete=excluded.setup_complete,updated_at=excluded.updated_at''',
                 (b['id'],body.profile,body.review_url,body.booking_url,int(body.setup_complete),s.ts()))
@@ -102,8 +103,9 @@ def install(s):
     @s.app.get('/api/admin/{slug}/growth/jobs')
     def jobs(slug:str,request:Request,stage:str=Query(default='',max_length=20),search:str=Query(default='',max_length=100),before:int|None=Query(default=None,gt=0),limit:int=Query(default=30,ge=1,le=100),due:bool=False):
         if stage and stage not in STAGES: s.fail(400,'Unknown job stage')
+        user=s.user_session(request)
         with s.db() as c:
-            _,b=authorize(c,slug,request)
+            _,b=authorize(c,slug,user)
             clauses=["r.business_id=?","r.kind='question'"];args=[b['id']]
             if stage: clauses.append(STAGE_SQL+'=?');args.append(stage)
             if before: clauses.append('r.id<?');args.append(before)
@@ -121,8 +123,9 @@ def install(s):
 
     @s.app.put('/api/admin/{slug}/growth/jobs/{rid}')
     def save_job(slug:str,rid:s.ResourceID,body:Job,request:Request):
+        user=s.user_session(request,True)
         with s.db() as c:
-            user,b=authorize(c,slug,request,True)
+            user,b=authorize(c,slug,user)
             r=c.execute('SELECT kind,status FROM requests WHERE business_id=? AND id=?',(b['id'],rid)).fetchone()
             if not r: s.fail(404,'Request not found')
             if r['kind']!='question': s.fail(400,'Only inquiries can become jobs')
@@ -141,7 +144,6 @@ def install(s):
             return {'ok':True,'revision':body.revision+1}
 
     def receipt(c,rid,request,mutate=False):
-        s.rate_limit(request,'growth-receipt',60,60)
         if mutate:s.same_origin(request)
         ticket=request.headers.get('x-scene-ticket','')
         if len(ticket)<25:s.fail(401,'Private receipt required')
@@ -153,6 +155,7 @@ def install(s):
 
     @s.app.get('/api/guest/requests/{rid}/journey')
     def journey(rid:s.ResourceID,request:Request):
+        s.rate_limit(request,'growth-receipt',60,60)
         with s.db() as c:
             r=receipt(c,rid,request)
             g=c.execute('SELECT stage,quote_cents,quote_description,quote_expires,quote_revision,accepted_revision,appointment_at FROM growth_jobs WHERE business_id=? AND request_id=?',(r['business_id'],rid)).fetchone()
@@ -165,14 +168,16 @@ def install(s):
 
     @s.app.post('/api/guest/requests/{rid}/journey')
     def decide(rid:s.ResourceID,body:Decision,request:Request):
+        s.same_origin(request);s.rate_limit(request,'growth-receipt',60,60)
         with s.db() as c:
             r=receipt(c,rid,request,True)
             g=c.execute('SELECT * FROM growth_jobs WHERE business_id=? AND request_id=?',(r['business_id'],rid)).fetchone()
-            if not g or g['quote_revision']!=body.quote_revision or g['stage'] not in ('quoted','contacted'):s.fail(409,'This quote changed. Refresh your receipt.')
-            if g['quote_cents'] is None or not g['quote_expires'] or g['quote_expires']<=s.ts():s.fail(409,'Quote expired. Ask the business for an update.')
+            if not g or g['quote_revision']!=body.quote_revision:s.fail(409,'This quote changed. Refresh your receipt.')
             if g['accepted_revision']==body.quote_revision:
                 if body.decision=='decline':s.fail(409,'This quote was already accepted. Contact the business to change it.')
                 return {'ok':True,'already_accepted':True}
+            if g['stage']!='quoted':s.fail(409,'This quote is no longer offered. Ask the business for an update.')
+            if g['quote_cents'] is None or not g['quote_expires'] or g['quote_expires']<=s.ts():s.fail(409,'Quote expired. Ask the business for an update.')
             c.execute('UPDATE growth_jobs SET accepted_revision=?,stage=?,revision=revision+1,updated_at=? WHERE business_id=? AND request_id=?',
                 (body.quote_revision if body.decision=='accept' else None,'contacted' if body.decision=='accept' else 'lost',s.ts(),r['business_id'],rid))
             s.audit(c,r['business_id'],None,'quote.'+body.decision,rid)
