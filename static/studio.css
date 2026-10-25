@@ -17,3 +17,6 @@
 /* Operational text uses a readable floor; scale illustrations separately. */
 .app-shell .screen-label,.app-shell .form-field label,.app-shell .chip,.app-shell .status,.app-shell .ticket-footer time,.app-shell .ticket-number,.app-shell .ticket-done,.app-shell .stat-card>span,.app-shell .stat-card>small,.app-shell .row-main small,.app-shell .qr-card p,.app-shell .station-editor summary,.app-shell .request-pages>span,.app-shell .panel .team-row small,.app-shell .sidebar-guide p,.app-shell .sidebar-guide .text-button,.app-shell .nav-label,.app-shell .workspace-footer{font-size:.75rem}
 .guest-design .guest-product-info small,.guest-design .menu-heading>span,.guest-design .receipt small,.guest-design .receipt-status,.guest-design .guest-fineprint,.guest-design .guest-cart>p{font-size:.75rem!important}
+
+/* Keep receipt status truthful when the connection is interrupted. */
+.guest-connection{margin-top:12px;padding:14px;border:1px solid #7a4b00;border-radius:12px;background:#fff8e8;color:#563500}.guest-connection[hidden]{display:none}.guest-connection p{margin:0 0 8px;font-size:.875rem;line-height:1.5}.guest-connection .smallbtn{min-height:44px;color:#563500;border:1px solid currentColor;background:transparent}

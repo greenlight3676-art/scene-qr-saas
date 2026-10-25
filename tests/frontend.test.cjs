@@ -400,3 +400,40 @@ test('closing an account dialog restores background interaction before returning
  app.state.authReturnFocus={focus(){assert.equal(nodes.landing.inert,false);assert.equal(nodes.appShell.inert,false);assert.equal(nodes.guestShell.inert,false);restored=true;}};
  app.authClose();assert.equal(restored,true);
 });
+
+function receiptPolling(fetch){
+ const source=fs.readFileSync('static/app.js','utf8'),start=source.lastIndexOf(' initialize().catch(');
+ let poll;const saved=new Map(),nodes={guestConnection:{hidden:true},guestConnectionMessage:{textContent:''},retryGuestStatus:{disabled:false}},receipt={textContent:'New',dataset:{status:'open'}};
+ const context=vm.createContext({URLSearchParams,crypto:webcrypto,setInterval:callback=>(poll=callback,1),clearInterval:()=>{},sessionStorage:{setItem:(k,v)=>saved.set(k,v)},document:{hidden:false,getElementById:id=>nodes[id],querySelector:()=>receipt},fetch});
+ vm.runInContext(source.slice(0,start)+'globalThis.receiptTest={state,beginGuestStatusPolling};})();',context);
+ const app=context.receiptTest;app.state.qr='synthetic-qr';app.state.receipts=[{id:1,ticket:'synthetic-private-ticket',status:'open'}];app.beginGuestStatusPolling();
+ return {app,nodes,receipt,saved,check:()=>poll()};
+}
+
+test('failed receipt checks preserve the confirmed status and expose recovery; retry clears the warning',async()=>{
+ let online=false;
+ const review=receiptPolling(async()=>{if(!online)throw new Error('offline');return {ok:true,json:async()=>({status:'completed'})}});
+ await review.check();
+ assert.equal(review.receipt.textContent,'New');assert.equal(review.app.state.receipts[0].status,'open');
+ assert.equal(review.nodes.guestConnection.hidden,false);assert.match(review.nodes.guestConnectionMessage.textContent,/last confirmed/);
+ assert.equal(review.nodes.retryGuestStatus.disabled,false);
+ online=true;await review.app.state.retryGuestStatus();
+ assert.equal(review.receipt.textContent,'Done');assert.equal(review.nodes.guestConnection.hidden,true);
+ assert.equal(JSON.parse(review.saved.get('scene-receipts:synthetic-qr'))[0].status,'completed');
+ assert.equal(review.app.state.retryGuestStatus,null);
+});
+
+test('slow receipt checks cannot overlap or overwrite a different QR session',async()=>{
+ let complete,calls=0;
+ const review=receiptPolling(()=>{calls++;return new Promise(resolve=>{complete=resolve})});
+ const pending=review.check();await review.check();assert.equal(calls,1);
+ review.app.state.qr='another-qr';complete({ok:true,json:async()=>({status:'completed'})});await pending;
+ assert.equal(review.receipt.textContent,'New');assert.equal(review.saved.size,0);
+});
+
+test('session restoration starts even when demo detection has not completed',async()=>{
+ const source=fs.readFileSync('static/app.js','utf8'),start=source.lastIndexOf(' initialize().catch('),calls=[];
+ const context=vm.createContext({URLSearchParams,location:{search:'',hash:'',pathname:'/'},document:{getElementById:()=>({closest:()=>null})},fetch:async path=>{calls.push(path);if(path.includes('/demo/'))return new Promise(()=>{});return {ok:true,json:async()=>({businesses:[]})}}});
+ vm.runInContext(source.slice(0,start)+"wire=()=>{};section=()=>{};globalThis.startTest=initialize;})();",context);
+ await context.startTest();assert.deepEqual(calls,['/api/demo/trio-demo','/api/me']);
+});

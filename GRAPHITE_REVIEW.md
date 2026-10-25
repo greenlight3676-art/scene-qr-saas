@@ -6,7 +6,7 @@ Implements the user-supplied Lundy Design Studio reference for Scene QR. Midnigh
 
 Semantic styles, consistent branding, readable operational labels, smaller guest headers, service icons, mobile navigation focus management, modal background isolation, and useful guest load/retry states are implemented. Closing the account dialog now removes background inertness before restoring focus. Receipt polling still synchronizes text, semantic status, and persisted state.
 
-This version is saved for design review. It does **not** replace the public production version. The user's reference requires permission before publishing. No billing, database, Render configuration, access policy, prices or customer data were changed.
+Version 8 was published after the user reviewed the design and authorized publication. This document records the checks performed for that release. No billing, database, Render configuration, access policy, prices or customer data were changed.
 
 ## Verified coverage
 
@@ -34,4 +34,4 @@ This version is saved for design review. It does **not** replace the public prod
 - New production email delivery, Stripe, POS and confirmed bookings are outside this change and are not claimed as integrated.
 - Existing shared design PR #2 is open and unmerged; this change does not assume it is present in main.
 
-**Review status:** ready for visual approval and further device testing. **Release status:** not approved/published; production retains the previously published version.
+**Release status:** version 8 published with user approval. Further device testing remains open. See RELIABILITY_REVIEW.md for the subsequent connection-recovery changes.
