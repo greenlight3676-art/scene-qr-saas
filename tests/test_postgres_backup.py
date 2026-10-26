@@ -7,7 +7,7 @@ import uuid
 from urllib.parse import urlsplit,urlunsplit
 import pytest
 from storage import connect
-from migrate import migrate,import_sqlite,TABLES,SECURITY_TABLES,BACKEND_TABLES
+from migrate import migrate,import_sqlite,TABLES,SECURITY_TABLES,BACKEND_TABLES,GROWTH_TABLES
 
 pytestmark=pytest.mark.skipif(not os.getenv('SCENE_TEST_POSTGRES_URL'),reason='Disposable PostgreSQL URL not configured')
 
@@ -33,7 +33,7 @@ def test_disposable_dump_restore_preserves_application_rows(postgres_schema,sqli
     backup=tmp_path/'synthetic-backup.dump'
     with connect(url) as raw:
         migrate(raw);import_sqlite(raw,sqlite_snapshot)
-        tables=(*TABLES,*SECURITY_TABLES,*BACKEND_TABLES,'scene_migrations')
+        tables=(*TABLES,*SECURITY_TABLES,*BACKEND_TABLES,*GROWTH_TABLES,'scene_migrations')
         # Counts alone miss changed statuses, contacts, receipts and QR tokens.
         expected={t:sorted(json.dumps(dict(row),sort_keys=True) for row in
                            raw.execute(f'SELECT * FROM {t}').fetchall()) for t in tables}

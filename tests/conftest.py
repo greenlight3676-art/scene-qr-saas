@@ -34,6 +34,10 @@ def sqlite_snapshot(tmp_path):
         upgrade_security(c)
         from backend_schema import upgrade as upgrade_backend
         upgrade_backend(c, sqlite=True)
+        from growth import upgrade_sqlite as upgrade_growth
+        upgrade_growth(c)
+        c.execute("INSERT INTO growth_settings(business_id,profile,updated_at) VALUES(1,'tint',1)")
+        c.execute("INSERT INTO growth_jobs(request_id,business_id,stage,quote_cents,quote_description,quote_revision,updated_at) VALUES(1,1,'quoted',35000,'Synthetic scope',1,1)")
     return source
 
 
