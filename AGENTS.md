@@ -48,4 +48,5 @@ When changing frontend layout, flows, copy, animation, accessibility, or prepari
 - `business-flow-ux-and-microcopy`: onboarding, QR requests, dashboard flows and copy.
 - `inclusive-responsive-frontend`: accessibility, mobile, internationalization and performance.
 - `premium-release-audit`: interactive QA before demos or client handoff.
+- `higgsfield-commercial-director`: plan credible Higgsfield marketing videos with sales-first demonstrations, time-coded shot plans, source media continuity, and limited-credit preflight; see its Scene QR commercial reference.
 Keep these skills subordinate to the security rules, working functionality, test requirements, and no-unauthorized-deployment constraints above.
