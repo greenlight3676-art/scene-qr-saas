@@ -81,7 +81,12 @@ def test_invalid_booking_revenue_expired_quote_and_followup_filters():
         assert len(c.get(base+'/jobs?due=true').json()['jobs'])==1
         assert len(c.get(base+'/jobs?search=nonexistent').json()['jobs'])==0
         assert c.get(base+'/jobs?stage=garbage').status_code==400
-        with db() as con:con.execute('UPDATE growth_jobs SET quote_expires=? WHERE request_id=?',(ts()-10,rid))
+        with db() as con:
+            # The expiry fixture must obey the same tenant scope as production.
+            from server import scope
+            bid=con.execute('SELECT id FROM businesses WHERE slug=?',(slug,)).fetchone()['id']
+            scope(con,'scene.tenant_id',bid)
+            con.execute('UPDATE growth_jobs SET quote_expires=? WHERE request_id=?',(ts()-10,rid))
         res=c.post(f'/api/guest/requests/{rid}/journey',headers={'x-scene-ticket':r['ticket']},json={'quote_revision':1,'decision':'accept'})
         assert res.status_code==409
 
