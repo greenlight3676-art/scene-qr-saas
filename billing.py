@@ -1,6 +1,7 @@
-"""Stripe test-mode transport and subscription projection. No card data stored.
+"""Mode-checked Stripe transport and subscription projection. No card data stored.
 
-Live-mode billing is deliberately refused: it requires a separate approved release.
+Test mode is the default. Live mode requires an explicit private host setting
+and matching live credentials; this module never enables it automatically.
 Signed snapshot events trigger canonical subscription reads, so delayed snapshots
 cannot resurrect canceled or past-due entitlements.
 """
@@ -24,6 +25,12 @@ urlopen = build_opener(NoRedirect).open
 class BillingError(Exception): pass
 
 
+def live_mode():
+    mode=os.getenv('SCENE_BILLING_MODE','test')
+    if mode not in ('test','live'): raise BillingError('Choose test or live billing mode')
+    return mode=='live'
+
+
 def plans():
     try:
         value = json.loads(os.getenv('SCENE_STRIPE_PRICES', '{}'))
@@ -35,9 +42,24 @@ def plans():
 
 def configuration():
     key = os.getenv('SCENE_STRIPE_SECRET_KEY','')
-    if not key.startswith(('sk_test_', 'rk_test_')):
-        raise BillingError('Stripe test credentials are required; live charges are disabled')
+    prefixes=('sk_live_','rk_live_') if live_mode() else ('sk_test_','rk_test_')
+    if not key.startswith(prefixes):
+        raise BillingError('Stripe credentials must match the configured billing mode')
     return key
+
+
+def configuration_status():
+    """Only configuration facts, never secrets or a claim of provider acceptance."""
+    try:
+        mode='live' if live_mode() else 'test'
+        configuration()
+        choices=plans()
+        secrets=[v.strip() for v in os.getenv('SCENE_STRIPE_WEBHOOK_SECRETS','').split(',') if v.strip()]
+        ready=bool(choices and secrets and all(v.startswith('whsec_') for v in secrets)
+                   and re.fullmatch(r'20\d\d-\d\d-\d\d\.[a-z]+',os.getenv('SCENE_STRIPE_API_VERSION','')))
+        return {'configured':ready,'mode':mode,'plans':list(choices) if ready else []}
+    except BillingError:
+        return {'configured':False,'mode':os.getenv('SCENE_BILLING_MODE','test') if os.getenv('SCENE_BILLING_MODE','test') in ('test','live') else 'unconfigured','plans':[]}
 
 
 def call(path, fields=None, idempotency=None):
@@ -51,7 +73,7 @@ def call(path, fields=None, idempotency=None):
     req=URLRequest('https://api.stripe.com/v1/'+path, data=None if fields is None else urlencode(fields).encode(), headers=headers)
     try:
         with urlopen(req,timeout=10) as response: result=json.loads(response.read(262145))
-        if not isinstance(result,dict) or result.get('livemode') is True: raise ValueError()
+        if not isinstance(result,dict) or ('livemode' in result and result['livemode'] is not live_mode()): raise ValueError()
         return result
     except (HTTPError,URLError,TimeoutError,OSError,ValueError):
         raise BillingError('Stripe unavailable; retry with the same idempotency key') from None
@@ -101,7 +123,7 @@ def event_projection(s,c,event):
     if account['subscription_id'] not in (None,sub_id) and account['status'] not in ('canceled','incomplete_expired'): return 'ignored'
     subscription=call('subscriptions/'+quote(sub_id,safe=''))
     if not isinstance(subscription,dict): raise BillingError('Invalid subscription response')
-    if subscription.get('id') != sub_id or subscription.get('customer') != customer or subscription.get('livemode') is not False:
+    if subscription.get('id') != sub_id or subscription.get('customer') != customer or subscription.get('livemode') is not live_mode():
         raise BillingError('Subscription identity mismatch')
     collection=subscription.get('items')
     items=collection.get('data') if isinstance(collection,dict) else None
@@ -135,7 +157,7 @@ def process_webhook(s, body, signature):
                 or not re.fullmatch(r'evt_[A-Za-z0-9]+',event['id']) or not isinstance(event.get('type'),str)
                 or not isinstance(event.get('created'),int) or isinstance(event.get('created'),bool)
                 or not 0 <= event['created'] <= 9223372036854775807
-                or event.get('livemode') is not False or event.get('account')):
+                or event.get('livemode') is not live_mode() or event.get('account')):
             raise ValueError()
         digest=hashlib.sha256(body).hexdigest()
         with s.db() as c:
@@ -169,7 +191,9 @@ def install(s):
         with s.db() as c:
             b=s.grant(c,slug,session['user_id'],{'owner'})
             row=c.execute('SELECT status,price_id,valid_until,updated_at FROM billing_accounts WHERE business_id=?',(b['id'],)).fetchone()
-            return {'subscription':dict(row) if row else None,'test_mode':True}
+            configured=configuration_status()
+            return {'subscription':dict(row) if row else None,'test_mode':configured['mode']=='test',
+                    **configured,'portal_available':bool(row and row['status']!='unconfigured')}
 
     @s.app.post('/api/admin/{slug}/billing/checkout')
     def checkout(slug: str,body: Checkout,request: Request):
@@ -195,8 +219,8 @@ def install(s):
                     'line_items[0][quantity]':1,'success_url':origin+'/?billing=return','cancel_url':origin+'/?billing=cancel'},f'scene-checkout-{b["id"]}-{idem}')
                 url=result.get('url','')
                 if urlsplit(url).hostname!='checkout.stripe.com' or not url.startswith('https://'):raise BillingError()
-                return {'url':url,'test_mode':True}
-        except BillingError:s.fail(503,'Test billing is not configured or unavailable')
+                return {'url':url,'test_mode':not live_mode()}
+        except BillingError:s.fail(503,'Subscription billing is not configured or unavailable')
 
     @s.app.post('/api/admin/{slug}/billing/portal')
     def portal(slug: str,request: Request):
@@ -210,5 +234,5 @@ def install(s):
                 result=call('billing_portal/sessions',{'customer':row['customer_id'],'return_url':s.PUBLIC_URL+'/'})
                 url=result.get('url','')
                 if urlsplit(url).hostname!='billing.stripe.com' or not url.startswith('https://'):raise BillingError()
-                return {'url':url,'test_mode':True}
-        except BillingError:s.fail(503,'Test billing is not configured or unavailable')
+                return {'url':url,'test_mode':not live_mode()}
+        except BillingError:s.fail(503,'Subscription billing is not configured or unavailable')

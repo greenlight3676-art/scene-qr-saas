@@ -15,6 +15,27 @@ def account(label):
     return c,slug,headers,board
 
 
+def test_setup_status_is_observed_tenant_activity_not_a_fake_pilot_check():
+    a,slug,headers,board=account('setup-status-owner')
+    b,_,_,_=account('setup-status-foreign')
+    path=f'/api/admin/{slug}/setup-status'
+    initial=a.get(path).json()
+    assert initial['active_services']==0 and initial['active_qr_locations']==2
+    assert initial['requests']==0 and initial['completed']==0 and initial['teammates']==0
+    assert initial['physical_device_test']=='not_verified'
+    assert b.get(path).status_code==404 and TestClient(server.app).get(path).status_code==401
+    invite=a.post(f'/api/admin/{slug}/invites',headers=headers,json={'role':'staff'}).json()
+    staff=TestClient(server.app)
+    assert staff.post('/api/auth/join',json={'email':'setup-staff@example.invalid','password':'SyntheticPassword123!','token':invite['join_url'].split('invite=')[1]}).status_code==200
+    assert staff.get(path).status_code==403
+    ticket=staff.post('/api/q/'+board['stations'][0]['token']+'/requests',json={'kind':'question','message':'Synthetic setup check','client_key':secrets.token_hex(16)}).json()
+    assert a.patch(f'/api/admin/{slug}/requests/{ticket["request_id"]}',headers=headers,json={'status':'completed'}).status_code==200
+    measured=a.get(path).json()
+    assert measured['teammates']==1 and measured['requests']==1 and measured['completed']==1 and measured['inquiries']==1
+    assert measured['physical_device_test']=='not_verified'
+    assert a.get(f'/api/admin/{slug}/growth').json()['setup']==measured
+
+
 def test_organizations_locations_qr_guest_customer_end_to_end(monkeypatch):
     a,slug,headers,board=account('extended-tenant-a')
     b,foreign,bheaders,_=account('extended-tenant-b')

@@ -26,9 +26,13 @@ spending or deployment. No recurring task is configured by this repository.
    email auto-confirmation or email login disabled. Test real delivery with
    explicitly approved staging accounts. No custom CAPTCHA widget is installed;
    if enabling provider CAPTCHA, wire the provider token to the signup API.
-6. Configure reviewed Stripe TEST prices/API version/webhook secrets. Use signed
-   snapshot events, test cards and test customers only; backend rejects live keys
-   and live events. Reconcile subscriptions through webhooks, never success URLs.
+6. Begin with SCENE_BILLING_MODE=test and matching Stripe TEST credentials,
+   reviewed prices/API version/webhook secrets. Live mode is implemented behind
+   an explicit SCENE_BILLING_MODE=live operator setting and requires matching live
+   credentials, prices and webhook endpoint. Do not activate it without completed
+   provider acceptance. This release leaves the deployed mode/config unchanged.
+   Reconcile subscriptions through webhooks, never success URLs. The Sites proxy
+   must preserve Stripe-Signature, exact body bytes and Idempotency-Key.
 7. SCENE_ENV=production enforces guest sessions, subscriptions, trusted hosts,
    HTTPS, no demo, secure cookies, PostgreSQL and managed Auth. Staging can use
    these same security gates with test billing. The existing SQLite image smoke
@@ -82,9 +86,13 @@ spending or deployment. No recurring task is configured by this repository.
   Replayed accepted events return 200 without repeating effects. Subscription
   reads reconcile canonical state; inspect unknown/unbound customer events.
   Verify lifecycle behavior against a real test account before rollout.
-- Invitation creation queues mail. The default mail worker is dry-run. After
-  approved sending configuration, execute one `--send` job or separately approve
-  a recurring worker. Provider acceptance is not inbox delivery. Inspect retries,
+- Invitation creation queues mail. Sending remains disabled by default. Once a
+  verified sender/credentials and SCENE_MAIL_SEND=1 are explicitly configured,
+  each new invitation is sent after its transaction commits. Owners can retry one
+  ready queued invitation from Business setup; the same provider idempotency key
+  is reused. No recurring worker is installed. Provider acceptance is not inbox
+  delivery: owner-only delivery checks read the provider's latest event without
+  exposing email contents. Inspect retries,
   bounded attempts/review state, sender DNS and provider bounce/complaint logs.
 - Customer structured redaction does not erase free-text notes/backups. Adopt an
   approved privacy/retention policy and perform verified tenant-scoped reviews.

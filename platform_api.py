@@ -65,7 +65,27 @@ def guest_scope(s, c, q, request):
     if not row or row['station_id'] != q['station_id']: s.fail(401, 'Guest session expired or belongs to another location')
 
 
+def setup_status(s,c,b):
+    """Workspace facts only. Activity is not proof of a physical-device pilot."""
+    bid=b['id']
+    products=c.execute('SELECT count(*) n FROM products WHERE business_id=? AND active=1',(bid,)).fetchone()['n']
+    stations=c.execute('''SELECT count(*) n FROM stations t LEFT JOIN locations l ON l.id=t.location_id AND l.business_id=t.business_id
+        WHERE t.business_id=? AND t.active=1 AND (t.location_id IS NULL OR l.active=1)''',(bid,)).fetchone()['n']
+    team=c.execute("SELECT count(*) n FROM memberships WHERE business_id=? AND role IN ('manager','staff')",(bid,)).fetchone()['n']
+    activity=c.execute("SELECT count(*) requests,COALESCE(sum(CASE WHEN status='completed' THEN 1 ELSE 0 END),0) completed,COALESCE(sum(CASE WHEN kind='question' THEN 1 ELSE 0 END),0) inquiries FROM requests WHERE business_id=?",(bid,)).fetchone()
+    return {'active_services':products,'active_qr_locations':stations,'teammates':team,
+            **dict(activity),'physical_device_test':'not_verified',
+            'note':'Counts include all activity in this workspace, including any tests. They do not prove real customers, payments or physical-device testing.'}
+
+
 def install(s):
+    @s.app.get('/api/admin/{slug}/setup-status')
+    def setup(slug: str,request: Request):
+        session=s.user_session(request)
+        with s.db() as c:
+            b=s.grant(c,slug,session['user_id'],s.EDIT_ROLES)
+            return setup_status(s,c,b)
+
     @s.app.get('/api/organizations')
     def organizations(request: Request):
         session = s.user_session(request)

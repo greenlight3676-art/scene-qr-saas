@@ -28,7 +28,7 @@ from typing import Annotated, Literal
 from urllib.parse import quote, urlsplit
 
 import qrcode
-from fastapi import FastAPI, HTTPException, Query, Request, Path as ApiPath
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Path as ApiPath
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -628,7 +628,7 @@ def settings(slug:str,body:Settings,request:Request):
         return {'ok':True}
 
 @app.post('/api/admin/{slug}/invites')
-def create_invite(slug:str,body:InviteRequest,request:Request):
+def create_invite(slug:str,body:InviteRequest,request:Request,background_tasks:BackgroundTasks):
     s=user_session(request,True)
     with db() as c:
         b=grant(c,slug,s['user_id'],{'owner'})
@@ -643,9 +643,14 @@ def create_invite(slug:str,body:InviteRequest,request:Request):
         delivery='not_requested'
         if email:
             if not origin.startswith('https://') and os.getenv('SCENE_ENV')=='production': fail(503,'Configure public HTTPS origin')
-            mail_delivery.enqueue(__import__(__name__),c,b['id'],email,sha(token),join_url)
+            mail_id=mail_delivery.enqueue(__import__(__name__),c,b['id'],email,sha(token),join_url)
             delivery='queued'
-        return {'ok':True,'join_url':join_url,'expires_in_hours':24,'delivery':delivery}
+        bid=b['id']
+    # The invitation is durable before sending. Runs only when the operator has
+    # configured a sender AND explicitly enabled mail; no worker is auto-started.
+    if email and mail_delivery.configuration_status()['enabled']:
+        background_tasks.add_task(mail_delivery.process_one,__import__(__name__),business_id=bid,message_id=mail_id)
+    return {'ok':True,'join_url':join_url,'expires_in_hours':24,'delivery':delivery}
 
 @app.get('/api/admin/{slug}/members')
 def members(slug:str,request:Request):
