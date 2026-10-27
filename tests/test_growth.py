@@ -81,7 +81,12 @@ def test_invalid_booking_revenue_expired_quote_and_followup_filters():
         assert len(c.get(base+'/jobs?due=true').json()['jobs'])==1
         assert len(c.get(base+'/jobs?search=nonexistent').json()['jobs'])==0
         assert c.get(base+'/jobs?stage=garbage').status_code==400
-        with db() as con:con.execute('UPDATE growth_jobs SET quote_expires=? WHERE request_id=?',(ts()-10,rid))
+        with db() as con:
+            # The expiry fixture must obey the same tenant scope as production.
+            from server import scope
+            bid=con.execute('SELECT id FROM businesses WHERE slug=?',(slug,)).fetchone()['id']
+            scope(con,'scene.tenant_id',bid)
+            con.execute('UPDATE growth_jobs SET quote_expires=? WHERE request_id=?',(ts()-10,rid))
         res=c.post(f'/api/guest/requests/{rid}/journey',headers={'x-scene-ticket':r['ticket']},json={'quote_revision':1,'decision':'accept'})
         assert res.status_code==409
 
@@ -113,3 +118,32 @@ def test_growth_never_nests_session_or_rate_limit_database_transactions(monkeypa
         ticket={'x-scene-ticket':r['ticket']}
         assert owner.get(f'/api/guest/requests/{rid}/journey',headers=ticket).status_code==200
         assert owner.post(f'/api/guest/requests/{rid}/journey',headers=ticket,json={'quote_revision':1,'decision':'accept'}).status_code==200
+
+
+def test_unshared_quote_and_tentative_appointment_stay_private():
+    with TestClient(app) as owner, TestClient(app) as guest:
+        slug,h,r,_=setup(owner);rid=r['request_id']
+        endpoint=f'/api/admin/{slug}/growth/jobs/{rid}'
+        receipt=f'/api/guest/requests/{rid}/journey'
+        ticket={'x-scene-ticket':r['ticket']}
+        draft=quote(appointment_at=ts()+86400)
+        draft['stage']='new'
+        assert owner.put(endpoint,headers=h,json=draft).status_code==200
+        public=guest.get(receipt,headers=ticket).json()
+        assert not {'quote_cents','quote_description','quote_expires','quote_revision','accepted_revision','appointment_at'} & public.keys()
+        # The team still sees its draft, but the customer cannot accept it.
+        assert owner.get(f'/api/admin/{slug}/growth/jobs').json()['jobs'][0]['quote_cents']==35000
+        assert guest.post(receipt,headers=ticket,json={'quote_revision':1,'decision':'accept'}).status_code==409
+        draft.update(revision=1,stage='quoted')
+        assert owner.put(endpoint,headers=h,json=draft).status_code==200
+        public=guest.get(receipt,headers=ticket).json()
+        assert public['quote_cents']==35000 and 'appointment_at' not in public
+        assert guest.post(receipt,headers=ticket,json={'quote_revision':1,'decision':'accept'}).status_code==200
+        assert guest.get(receipt,headers=ticket).json()['quote_cents']==35000
+        # An edited price saved as Contacted is private until explicitly offered.
+        draft.update(revision=3,stage='contacted',quote_cents=45000)
+        assert owner.put(endpoint,headers=h,json=draft).status_code==200
+        assert 'quote_cents' not in guest.get(receipt,headers=ticket).json()
+        draft.update(revision=4,stage='booked')
+        assert owner.put(endpoint,headers=h,json=draft).status_code==200
+        assert guest.get(receipt,headers=ticket).json()['appointment_at']==draft['appointment_at']

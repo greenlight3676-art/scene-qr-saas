@@ -42,14 +42,14 @@ def test_postgres_migration_adapter_and_tenant_constraints():
 def test_import_preserves_data_sequences_and_source(postgres_schema, sqlite_snapshot):
     import hashlib
     import sqlite3
-    from migrate import import_sqlite, TABLES
+    from migrate import import_sqlite, TABLES, GROWTH_TABLES
     url, _ = postgres_schema
     original = hashlib.sha256(sqlite_snapshot.read_bytes()).hexdigest()
     with connect(url) as raw:
         migrate(raw)
         import_sqlite(raw, sqlite_snapshot)
         with sqlite3.connect(sqlite_snapshot) as old:
-            for table in TABLES:
+            for table in (*TABLES, *GROWTH_TABLES):
                 cursor = old.execute(f'SELECT * FROM {table}')
                 names = [col[0] for col in cursor.description]
                 expected = [dict(zip(names, row)) for row in cursor]
@@ -59,6 +59,23 @@ def test_import_preserves_data_sequences_and_source(postgres_schema, sqlite_snap
         with pytest.raises(RuntimeError, match='empty PostgreSQL target'):
             import_sqlite(raw, sqlite_snapshot)
     assert hashlib.sha256(sqlite_snapshot.read_bytes()).hexdigest() == original
+
+
+def test_existing_v4_adds_growth_without_changing_requests(postgres_schema):
+    url, _ = postgres_schema
+    with connect(url) as raw:
+        migrate(raw)
+        # Reproduce v4 databases created before the additive growth release.
+        raw.execute('DROP TABLE growth_jobs, growth_settings')
+        before = raw.execute('SELECT * FROM requests').fetchall()
+        migrate(raw)
+        raw.execute("INSERT INTO users(email,password,created_at) VALUES('growth@example.invalid','synthetic',1)")
+        raw.execute("INSERT INTO businesses(owner_id,name,slug,industry,created_at) VALUES(1,'Synthetic','growth','auto',1)")
+        raw.execute("INSERT INTO growth_settings(business_id,profile,updated_at) VALUES(1,'tint',1)")
+        migrate(raw)
+        assert raw.execute('SELECT * FROM requests').fetchall() == before
+        assert raw.execute('SELECT profile FROM growth_settings').fetchone()['profile'] == 'tint'
+        assert raw.execute('SELECT version FROM scene_migrations').fetchone()['version'] == 4
 
 
 def test_invalid_import_rolls_back_all_rows(postgres_schema, sqlite_snapshot):
@@ -168,18 +185,20 @@ def test_rls_denies_unscoped_reads_cross_tenant_writes_and_browser_roles(postgre
                 raw.execute('INSERT INTO guest_sessions VALUES(%s,%s,%s,1,2000000000)',('guest-'+str(bid),bid,bid))
                 raw.execute('INSERT INTO billing_accounts(business_id,customer_id,updated_at) VALUES(%s,%s,1)',(bid,'cus_'+str(bid)))
                 raw.execute("INSERT INTO mail_outbox(id,business_id,invite_hash,recipient,payload,created_at,next_attempt) VALUES(%s,%s,%s,'fixture@example.invalid','{}',1,1)",('mail-'+str(bid),bid,'synthetic-invite-'+str(bid)))
+                raw.execute("INSERT INTO growth_settings(business_id,updated_at) VALUES(%s,1)",(bid,))
+                raw.execute("INSERT INTO growth_jobs(request_id,business_id,stage,updated_at) SELECT id,business_id,'new',1 FROM requests WHERE business_id=%s",(bid,))
             harden(raw,role)
             harden(raw,role)
             raw.execute(sql.SQL('SET LOCAL ROLE {}').format(sql.Identifier(role)))
             assert raw.execute('SELECT id FROM requests').fetchall()==[]
-            for table in ('products','stations','scans','invites','audit_events','locations','customers','guest_sessions','billing_accounts','mail_outbox'):
+            for table in ('products','stations','scans','invites','audit_events','locations','customers','guest_sessions','billing_accounts','mail_outbox','growth_jobs','growth_settings'):
                 assert raw.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table))).fetchall() == []
             c.scope('scene.tenant_id',1)
             assert len(raw.execute('SELECT id FROM requests').fetchall())==1
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 with raw.transaction():
                     raw.execute('UPDATE requests SET business_id=2,station_id=2 WHERE business_id=1')
-            for table in ('stations','products','scans','invites','locations','customers','guest_sessions','billing_accounts','mail_outbox'):
+            for table in ('stations','products','scans','invites','locations','customers','guest_sessions','billing_accounts','mail_outbox','growth_jobs','growth_settings'):
                 rows = raw.execute(sql.SQL('SELECT business_id FROM {}').format(sql.Identifier(table))).fetchall()
                 assert [r['business_id'] for r in rows] == [1]
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
@@ -198,7 +217,7 @@ def test_rls_denies_unscoped_reads_cross_tenant_writes_and_browser_roles(postgre
             assert len(raw.execute('SELECT id FROM requests').fetchall())==1
             raw.execute('RESET ROLE')
             raw.execute(sql.SQL('SET LOCAL ROLE {}').format(sql.Identifier(browser)))
-            for table in ('users','sessions','requests','invites','auth_identities','audit_events','customers','guest_sessions','billing_accounts','billing_events','mail_outbox'):
+            for table in ('users','sessions','requests','invites','auth_identities','audit_events','customers','guest_sessions','billing_accounts','billing_events','mail_outbox','growth_jobs','growth_settings'):
                 assert raw.execute(sql.SQL('SELECT * FROM {}').format(sql.Identifier(table))).fetchall()==[]
         finally:
             raw.rollback()  # roles, schema contents and synthetic data never persist

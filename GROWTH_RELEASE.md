@@ -24,3 +24,23 @@ Rollback: deploy the previous backend/frontend version and keep the additive tab
 83 backend tests passed; 27 opt-in/environment tests skipped. 70 frontend tests passed. Isolated browser review covered desktop customer editing/save, setup, results, mobile navigation and 360px form fit. Database tenant read/write and browser-grant checks used temporary fixtures in a rolled-back transaction; no production customer data was changed.
 
 PostgreSQL transaction review: authenticate and apply durable rate limits before opening the scoped business transaction. Regression checks reject nested database transactions, which would self-block the PostgreSQL advisory lock.
+
+## PostgreSQL migration repair — October 26
+
+Fresh and pre-growth v4 databases must run `migrate.py up` under the migration
+owner before hardening/runtime startup. The migration now creates the additive
+schema in the connection's current schema, including for existing version 4;
+repeat execution preserves growth records. Run the existing `database_security.py`
+hardening step with the actual restricted runtime role before application access.
+No runtime DDL or relaxed RLS is introduced. The supplemental public SQL remains
+an alternative for its documented hosted setup; do not rerun its CREATE POLICY
+statements blindly. Existing hosted tables/data need no destructive reset.
+
+The importer includes optional growth tables after their referenced requests, and
+refuses a target with existing growth data. Disposable restore comparison includes
+both growth tables. CI now includes growth API/privacy/revision tests against the
+restricted PostgreSQL role. The development-only empty-schema down script removes
+growth tables before referenced tables; production rollback retains additive data.
+
+These source changes do not establish deployed acceptance or real pilot outcomes.
+See INVESTOR_STATUS.md for reviewed investor wording and evidence milestones.
