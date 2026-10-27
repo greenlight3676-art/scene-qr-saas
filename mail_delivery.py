@@ -14,6 +14,29 @@ urlopen=build_opener(NoRedirect).open
 class DeliveryError(Exception): pass
 
 
+def configuration_status():
+    configured=bool(os.getenv('SCENE_RESEND_API_KEY','').startswith('re_')
+                    and re.fullmatch(r'[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+',os.getenv('SCENE_MAIL_FROM','')))
+    return {'configured':configured,'enabled':configured and os.getenv('SCENE_MAIL_SEND','0')=='1',
+            'scope':'team_invitations','sms_enabled':False}
+
+
+def delivery_status(provider_id):
+    if not configuration_status()['configured'] or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',provider_id):
+        raise DeliveryError('Delivery status is unavailable')
+    request=Request('https://api.resend.com/emails/'+provider_id,
+                    headers={'Authorization':'Bearer '+os.getenv('SCENE_RESEND_API_KEY','')})
+    try:
+        with urlopen(request,timeout=10) as response: result=json.loads(response.read(65536))
+        if result.get('id')!=provider_id:raise ValueError()
+        event=result.get('last_event')
+        if event not in ('sent','delivered','delivery_delayed','bounced','complained','opened','clicked','scheduled','canceled','failed','suppressed'):
+            event='unknown'
+        return event
+    except (HTTPError,URLError,TimeoutError,OSError,ValueError,AttributeError):
+        raise DeliveryError('Delivery status is unavailable') from None
+
+
 def enqueue(s,c,bid,email,invite_hash,url):
     mid=secrets.token_hex(16)
     payload=json.dumps({'to':[email],'subject':'Your invitation to Scene QR',
@@ -38,10 +61,13 @@ def send(payload,key):
         raise DeliveryError('Delivery unavailable') from None
 
 
-def process_one(s,deliver=send,business_id=None):
+def process_one(s,deliver=None,business_id=None,message_id=None):
+    deliver=deliver or send
     with s.db() as c:
         s.scope(c,'scene.mail_worker','1')
-        if business_id is None:
+        if message_id is not None and business_id is not None:
+            row=c.execute("SELECT * FROM mail_outbox WHERE state='pending' AND next_attempt<=? AND business_id=? AND id=?",(s.ts(),business_id,message_id)).fetchone()
+        elif business_id is None:
             row=c.execute("SELECT * FROM mail_outbox WHERE state='pending' AND next_attempt<=? ORDER BY created_at,id LIMIT 1",(s.ts(),)).fetchone()
         else:
             row=c.execute("SELECT * FROM mail_outbox WHERE state='pending' AND next_attempt<=? AND business_id=? ORDER BY created_at,id LIMIT 1",(s.ts(),business_id)).fetchone()
@@ -72,7 +98,28 @@ def install(s):
         with s.db() as c:
             b=s.grant(c,slug,session['user_id'],{'owner'})
             rows=c.execute('SELECT id,recipient,state,attempts,created_at,next_attempt FROM mail_outbox WHERE business_id=? ORDER BY created_at DESC LIMIT 100',(b['id'],)).fetchall()
-            return {'messages':[dict(row) for row in rows]}
+            return {'messages':[dict(row) for row in rows],**configuration_status()}
+
+    @s.app.post('/api/admin/{slug}/mail/process')
+    def process(slug: str,request: Request):
+        session=s.user_session(request,True);s.rate_limit(request,'mail-process',10,60)
+        with s.db() as c:
+            b=s.grant(c,slug,session['user_id'],{'owner'});bid=b['id']
+        if not configuration_status()['enabled']:s.fail(503,'Configure and enable a verified email sender first')
+        return {'result':process_one(s,business_id=bid),'note':'Provider acceptance is not proof of inbox delivery.'}
+
+    @s.app.get('/api/admin/{slug}/mail/{mid}/delivery')
+    def delivery(slug: str,mid: str,request: Request):
+        session=s.user_session(request);s.rate_limit(request,'mail-status',30,60)
+        with s.db() as c:
+            b=s.grant(c,slug,session['user_id'],{'owner'})
+            row=c.execute('SELECT state,provider_id FROM mail_outbox WHERE business_id=? AND id=?',(b['id'],mid)).fetchone()
+            if not row:s.fail(404,'Message not found')
+        if row['state']!='accepted' or not row['provider_id']:
+            return {'state':row['state'],'last_event':None,'delivered':False}
+        try:event=delivery_status(row['provider_id'])
+        except DeliveryError:s.fail(503,'Email delivery status is temporarily unavailable')
+        return {'state':row['state'],'last_event':event,'delivered':event in ('delivered','opened','clicked')}
 
 
 if __name__=='__main__':

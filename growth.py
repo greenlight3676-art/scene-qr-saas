@@ -87,7 +87,8 @@ def install(s):
                 (SELECT COALESCE(sum(j.revenue_cents),0) FROM growth_jobs j JOIN requests z ON z.id=j.request_id AND z.business_id=j.business_id WHERE j.business_id=t.business_id AND z.station_id=t.id AND j.stage='won') revenue_cents,
                 (SELECT count(*) FROM growth_jobs j JOIN requests z ON z.id=j.request_id AND z.business_id=j.business_id WHERE j.business_id=t.business_id AND z.station_id=t.id AND j.stage='won' AND j.revenue_cents IS NULL) unvalued_wins
                 FROM stations t WHERE t.business_id=? ORDER BY t.id''',(b['id'],))]
-            return {'config':config(c,b['id']),'stages':stages,'due':due,'placements':placements,'server_time':s.ts()}
+            return {'config':config(c,b['id']),'stages':stages,'due':due,'placements':placements,'server_time':s.ts(),
+                    'setup':s.platform_api.setup_status(s,c,b)}
 
     @s.app.put('/api/admin/{slug}/growth/config')
     def save_config(slug:str,body:Config,request:Request):

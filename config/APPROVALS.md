@@ -1,5 +1,18 @@
 # Owner authorizations
 
+## 2026-10-27 — Production-blocker fixes
+
+Owner supplied the critical/high/medium production, onboarding, notification,
+subscription, results and accessibility list and instructed "Fix" after the
+existing Render workspace/deployment question. Scope: repair and verify code,
+merge tested changes to qr-overnight-build, update the existing Scene QR API
+(srv-dbegcsi9lscs73b2sjug in My Workspace) and existing public Sites frontend,
+preserving Supabase project/data, audience and current private configuration.
+No paid resource, live billing activation, real charge, SMS send, customer-data
+fixture or hosted schema migration is included. New management connections were
+rejected by automatic approval review and remain blocked pending specific account
+authorization; existing native connections remain usable within this scope.
+
 ## 2026-10-21 — GitHub code publication
 
 - Instruction: "continue and deploy to github".

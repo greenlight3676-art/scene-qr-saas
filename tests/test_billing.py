@@ -152,3 +152,40 @@ def test_malformed_signed_event_is_rejected_without_consuming_id(monkeypatch,inv
     response=TestClient(server.app).post('/api/billing/webhook',content=payload,headers=headers)
     assert response.status_code==400
     with server.db() as c:assert not c.execute('SELECT 1 FROM billing_events WHERE event_id=?',(value['id'],)).fetchone()
+
+
+def test_live_mode_is_explicit_and_never_accepts_test_events_or_credentials(monkeypatch):
+    _,_,_,board=fixture(monkeypatch,'live-mode-contract')
+    monkeypatch.setenv('SCENE_STRIPE_SECRET_KEY','sk_live_synthetic_never_real')
+    with pytest.raises(billing.BillingError):billing.configuration()
+    monkeypatch.setenv('SCENE_BILLING_MODE','live')
+    assert billing.configuration()=='sk_live_synthetic_never_real'
+    client=TestClient(server.app)
+    value=event(board,'evt_LiveModeContract')
+    value['data']['object']['id']='sub_LiveSynthetic'
+    payload,headers=signed(value)
+    assert client.post('/api/billing/webhook',content=payload,headers=headers).status_code==400
+    value['livemode']=True
+    payload,headers=signed(value)
+    # A live event cannot activate a subscription from a test-mode provider reply.
+    monkeypatch.setattr(billing,'call',lambda *a,**k:subscription(board))
+    assert client.post('/api/billing/webhook',content=payload,headers=headers).status_code==503
+    def live_subscription(*a,**k):
+        result=subscription(board);result['id']='sub_LiveSynthetic';result['livemode']=True;return result
+    monkeypatch.setattr(billing,'call',live_subscription)
+    assert client.post('/api/billing/webhook',content=payload,headers=headers).status_code==200
+    monkeypatch.setenv('SCENE_STRIPE_SECRET_KEY','sk_test_synthetic_never_real')
+    with pytest.raises(billing.BillingError):billing.configuration()
+
+
+def test_billing_configuration_status_never_leaks_secrets_or_claims_payment(monkeypatch):
+    owner,slug,_,_=fixture(monkeypatch,'billing-status-contract')
+    monkeypatch.setenv('SCENE_STRIPE_SECRET_KEY','sk_test_synthetic_private')
+    monkeypatch.setenv('SCENE_STRIPE_API_VERSION','2026-01-28.clover')
+    value=owner.get(f'/api/admin/{slug}/billing')
+    assert value.status_code==200
+    assert value.json()['configured'] and value.json()['plans']==['standard']
+    assert value.json()['mode']=='test' and value.json()['test_mode']
+    assert 'synthetic_private' not in value.text and SECRET not in value.text
+    monkeypatch.setenv('SCENE_STRIPE_API_VERSION','')
+    assert not owner.get(f'/api/admin/{slug}/billing').json()['configured']
