@@ -160,6 +160,16 @@ def install(s):
             r=receipt(c,rid,request)
             g=c.execute('SELECT stage,quote_cents,quote_description,quote_expires,quote_revision,accepted_revision,appointment_at FROM growth_jobs WHERE business_id=? AND request_id=?',(r['business_id'],rid)).fetchone()
             result=dict(g) if g else {'stage':'new'}
+            # Saving a draft must not publish its price/scope. Accepted offers stay
+            # visible as the team progresses the job; editing clears acceptance.
+            shared = result['stage']=='quoted' or (
+                (result.get('quote_revision') or 0)>0
+                and result.get('accepted_revision')==result.get('quote_revision'))
+            if not shared:
+                for field in ('quote_cents','quote_description','quote_expires','quote_revision','accepted_revision'):
+                    result.pop(field,None)
+            if result['stage'] not in ('booked','won'):
+                result.pop('appointment_at',None)
             if result.get('quote_cents') is not None:result['quote_expired']=not result['quote_expires'] or result['quote_expires']<=s.ts()
             # Completed service requests may offer the same return actions regardless of feedback.
             result['return_links']=config(c,r['business_id']) if r['status']=='completed' else {}
